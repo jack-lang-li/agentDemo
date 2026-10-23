@@ -13,6 +13,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -38,11 +40,11 @@ class ChatIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        when(modelClient.chat("你好")).thenReturn("模型收到你的问题：你好");
+        when(modelClient.chat("你好")).thenReturn("你好，我可以帮你查询订单。");
     }
 
     @Test
-    void shouldReturnMockAnswer() throws Exception {
+    void shouldReturnModelAnswer() throws Exception {
         mockMvc.perform(post("/api/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -50,7 +52,8 @@ class ChatIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.answer").value("模型收到你的问题：你好"));
+                .andExpect(jsonPath("$.answer").value("你好，我可以帮你查询订单。"));
+        verify(modelClient).chat("你好");
     }
 
     @ParameterizedTest
@@ -63,6 +66,7 @@ class ChatIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("message 不能为空"));
+        verifyNoInteractions(modelClient);
     }
 
     @Test
@@ -72,6 +76,7 @@ class ChatIntegrationTest {
                         .content("{\"message\":"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("请求体必须是合法的 JSON 对象"));
+        verifyNoInteractions(modelClient);
     }
 
     @Test
@@ -79,6 +84,7 @@ class ChatIntegrationTest {
         mockMvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("请求体必须是合法的 JSON 对象"));
+        verifyNoInteractions(modelClient);
     }
 
     @Test

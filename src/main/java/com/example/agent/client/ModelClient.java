@@ -1,5 +1,13 @@
 package com.example.agent.client;
 
+import com.example.agent.client.enums.ContentItemType;
+import com.example.agent.client.enums.JsonSchemaType;
+import com.example.agent.client.enums.MessageRole;
+import com.example.agent.client.enums.OutputItemType;
+import com.example.agent.client.enums.ResponseStatus;
+import com.example.agent.client.enums.ToolChoice;
+import com.example.agent.client.enums.ToolName;
+import com.example.agent.client.enums.ToolType;
 import com.example.agent.client.model.*;
 import com.example.agent.config.ModelProperties;
 import com.example.agent.tool.OrderTool;
@@ -35,62 +43,93 @@ public class ModelClient {
     private final OrderTool orderTool;
     private final ObjectMapper objectMapper;
 
+    private static final int MAX_MODEL_ROUNDS = 5;
+
     public String chat(String message) {
 
-        // 1. 初始上下文：用户问题
+        // 本次用户请求的上下文
         List<JsonNode> history = new ArrayList<>();
         history.add(objectMapper.valueToTree(
-                new ModelMessage("user", message)
+                new ModelMessage(MessageRole.USER.getValue(), message)
         ));
 
         ModelRequest request = new ModelRequest();
         request.setModel(modelProperties.getModel());
         request.setInput(history);
         request.setTools(List.of(buildOrderTool()));
+        request.setToolChoice(ToolChoice.AUTO.getValue());
 
-        // 2. 第一次请求：模型决定是否调用工具
-        JsonNode firstRaw = callModel(request);
-        ModelResponse firstResponse = objectMapper.convertValue(
-                firstRaw, ModelResponse.class
-        );
+        for (int round = 1; round <= MAX_MODEL_ROUNDS; round++) {
 
-        // 3. 执行模型请求的工具，收集结果
-        List<JsonNode> toolResults = executeToolCalls(firstResponse);
+            logger.info("Agent开始第{}轮模型请求", round);
 
-        // 没有工具调用：直接返回本次回答
-        if (toolResults.isEmpty()) {
-            return extractAnswer(firstResponse);
+            // 1. 请求模型
+            JsonNode rawResponse = callModel(request);
+
+            // 2. 只处理已经完整结束的模型响应
+            String status = rawResponse.path("status").asText();
+            if (!ResponseStatus.COMPLETED.getValue().equals(status)) {
+                throw new IllegalStateException(
+                        "模型响应未完成，status=" + status
+                );
+            }
+
+            ModelResponse response = objectMapper.convertValue(
+                    rawResponse, ModelResponse.class
+            );
+
+            // 3. 没有工具调用：尝试取得最终回答
+            if (!hasToolCalls(response)) {
+
+                String answer = extractAnswer(response);
+
+                if (answer == null || answer.isBlank()) {
+                    throw new IllegalStateException(
+                            "模型未返回工具调用，也未返回有效回答"
+                    );
+                }
+
+                logger.info("Agent在第{}轮完成任务", round);
+                return answer;
+            }
+
+            // 4. 已无下一轮可用于回传结果，不再执行工具
+            if (round == MAX_MODEL_ROUNDS) {
+                break;
+            }
+
+            // 5. 保留本轮完整的模型输出
+            for (JsonNode item : rawResponse.path("output")) {
+                history.add(item);
+            }
+
+            // 6. 执行本轮工具，追加执行结果
+            List<JsonNode> toolResults = executeToolCalls(response);
+            history.addAll(toolResults);
+
+            logger.info(
+                    "Agent第{}轮执行了{}个工具调用，继续下一轮",
+                    round, toolResults.size()
+            );
         }
 
-        // 4. 保留第一次模型输出，再追加工具结果
-        for (JsonNode item : firstRaw.path("output")) {
-            history.add(item);
-        }
-        history.addAll(toolResults);
-
-        // 5. 本节限定一轮工具执行，第二次让模型生成回答
-        request.setToolChoice("none");
-
-        JsonNode secondRaw = callModel(request);
-        ModelResponse secondResponse = objectMapper.convertValue(
-                secondRaw, ModelResponse.class
+        throw new IllegalStateException(
+                "达到模型调用轮数上限，任务仍未完成："
+                        + MAX_MODEL_ROUNDS
         );
-
-        // 6. 提取第二次模型响应中的回答
-        return extractAnswer(secondResponse);
     }
 
     private String extractAnswer(ModelResponse response) {
 
         for (OutputItem outputItem : response.getOutput()) {
 
-            if (!"message".equals(outputItem.getType())) {
+            if (!OutputItemType.MESSAGE.getValue().equals(outputItem.getType())) {
                 continue;
             }
 
             for (ContentItem contentItem : outputItem.getContent()) {
 
-                if ("output_text".equals(contentItem.getType())) {
+                if (ContentItemType.OUTPUT_TEXT.getValue().equals(contentItem.getType())) {
                     return contentItem.getText();
                 }
             }
@@ -102,12 +141,12 @@ public class ModelClient {
     private ModelTool buildOrderTool() {
 
         Map<String, Object> orderIdSchema = Map.of(
-                "type", "string",
+                "type", JsonSchemaType.STRING.getValue(),
                 "description", "需要查询的订单编号"
         );
 
         Map<String, Object> parameters = Map.of(
-                "type", "object",
+                "type", JsonSchemaType.OBJECT.getValue(),
                 "properties", Map.of(
                         "orderId", orderIdSchema
                 ),
@@ -116,8 +155,8 @@ public class ModelClient {
         );
 
         ModelTool tool = new ModelTool();
-        tool.setType("function");
-        tool.setName("query_order");
+        tool.setType(ToolType.FUNCTION.getValue());
+        tool.setName(ToolName.QUERY_ORDER.getValue());
         tool.setDescription(
                 "根据订单编号查询订单当前状态。当用户需要查询具体订单状态时使用。"
         );
@@ -134,7 +173,7 @@ public class ModelClient {
 
         for (OutputItem item : response.getOutput()) {
 
-            if (!"function_call".equals(item.getType())) {
+            if (!OutputItemType.FUNCTION_CALL.getValue().equals(item.getType())) {
                 continue;
             }
             logger.info("工具名称：{}", item.getName());
@@ -151,12 +190,12 @@ public class ModelClient {
 
         for (OutputItem item : response.getOutput()) {
 
-            if (!"function_call".equals(item.getType())) {
+            if (!OutputItemType.FUNCTION_CALL.getValue().equals(item.getType())) {
                 continue;
             }
 
             // 1. 只允许执行程序明确支持的工具
-            if (!"query_order".equals(item.getName())) {
+            if (!ToolName.QUERY_ORDER.getValue().equals(item.getName())) {
                 throw new IllegalArgumentException(
                         "不支持的工具：" + item.getName()
                 );
@@ -200,7 +239,7 @@ public class ModelClient {
             String result = orderTool.queryOrder(orderId);
 
             results.add(objectMapper.valueToTree(Map.of(
-                    "type", "function_call_output",
+                    "type", OutputItemType.FUNCTION_CALL_OUTPUT.getValue(),
                     "call_id", item.getCallId(),
                     "output", result
             )));
@@ -241,5 +280,20 @@ public class ModelClient {
             );
             throw exception;
         }
+    }
+
+    private boolean hasToolCalls(ModelResponse response) {
+
+        if (response.getOutput() == null) {
+            return false;
+        }
+
+        for (OutputItem item : response.getOutput()) {
+            if (OutputItemType.FUNCTION_CALL.getValue().equals(item.getType())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

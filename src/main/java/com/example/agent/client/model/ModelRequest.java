@@ -1,5 +1,6 @@
 package com.example.agent.client.model;
 
+import com.example.agent.client.enums.ToolChoice;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
@@ -26,5 +27,5 @@ public class ModelRequest {
      * 本次请求提供给模型的工具定义
      */
     @JsonProperty("tool_choice")
-    private String toolChoice = "auto";
+    private String toolChoice = ToolChoice.AUTO.getValue();
 }
