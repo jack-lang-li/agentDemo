@@ -2,8 +2,13 @@ package com.example.agent.client;
 
 import com.example.agent.client.model.ModelMessage;
 import com.example.agent.client.model.ModelRequest;
+import com.example.agent.config.ModelProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,34 +19,40 @@ import java.util.List;
  * 阶段 2 在这里学习 HTTP 调用；阶段 3 再抽象 ModelProvider，支持多模型。
  */
 @Component
-@ConditionalOnProperty(prefix = "agent.model", name = "provider", havingValue = "mock",
-        matchIfMissing = true)
+@RequiredArgsConstructor
 public class ModelClient {
+
+    private final ModelProperties modelProperties;
 
     public String chat(String message) {
 
-        List<ModelMessage> messages = new ArrayList<>();
+        // 1. 将用户输入转换成模型消息
+        ModelMessage userMessage =
+                new ModelMessage("user", message);
 
-        messages.add(
-                new ModelMessage(
-                        "system",
-                        "你是一个Java智能体学习助手，请使用中文回答。"
-                )
-        );
-
-        messages.add(
-                new ModelMessage(
-                        "user",
-                        message
-                )
-        );
-
+        // 2. 构造发送给模型服务的请求对象
         ModelRequest request = new ModelRequest();
-        request.setModel("mock-model");
-        request.setMessages(messages);
+        request.setModel(modelProperties.getModel());
+        request.setInput(List.of(userMessage));
 
-        System.out.println(request);
+        // 3. 创建 HTTP 客户端
+        RestClient restClient = RestClient.create();
 
-        return "当前已经完成模型请求对象组装：" + message;
+        // 4. 调用真实模型 HTTP API
+        // 当前阶段故意直接接收原始 JSON 字符串，
+        // 下一阶段再分析并反序列化模型响应。
+        String rawResponse = restClient
+                .post()
+                .uri(modelProperties.getBaseUrl() + "/v1/responses")
+                .header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + modelProperties.getApiKey()
+                )
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(String.class);
+
+        return rawResponse;
     }
 }

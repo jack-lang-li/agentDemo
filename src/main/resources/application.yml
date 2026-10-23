@@ -16,4 +16,7 @@ management:
 
 agent:
   model:
-    provider: mock
+    provider: deepseek
+    base-url: https://api.deepseek.com
+    api-key: ${OPENAI_API_KEY}
+    model: deepseek-flash

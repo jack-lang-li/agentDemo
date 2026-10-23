@@ -15,5 +15,5 @@ public class ModelRequest {
     /**
      * 当前发送给模型的上下文消息
      */
-    private List<ModelMessage> messages;
+    private List<ModelMessage> input;
 }
