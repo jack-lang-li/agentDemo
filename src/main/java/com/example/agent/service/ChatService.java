@@ -17,7 +17,6 @@ public class ChatService {
 
     public ChatResponse chat(String message) {
         String answer = modelClient.chat(message);
-        System.out.println("模型回答: " + answer);
         return new ChatResponse(answer);
     }
 }

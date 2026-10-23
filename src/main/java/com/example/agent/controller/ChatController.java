@@ -5,6 +5,8 @@ import com.example.agent.dto.ChatResponse;
 import com.example.agent.service.ChatService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,10 +20,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatController {
 
+    private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
+
     private final ChatService chatService;
 
     @PostMapping
     public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
-        return chatService.chat(request.getMessage());
+        logger.info("聊天请求：message={}", request.getMessage());
+        ChatResponse response = chatService.chat(request.getMessage());
+        logger.info("聊天响应：answer={}", response.getAnswer());
+        return response;
     }
 }

@@ -1,5 +1,7 @@
 package com.example.agent;
 
+import com.example.agent.client.ModelClient;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -8,7 +10,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -16,17 +20,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 加载完整 Spring 上下文，实际经过 Controller、Service 和 Mock ModelClient。
+ * 加载完整 Spring 上下文，替换模型客户端，避免测试调用外部付费 API。
  */
-@SpringBootTest
+@SpringBootTest(properties = "agent.model.api-key=test-key")
 @AutoConfigureMockMvc
 class ChatIntegrationTest {
+
+    @MockitoBean
+    private ModelClient modelClient;
 
     private final MockMvc mockMvc;
 
     @Autowired
     ChatIntegrationTest(MockMvc mockMvc) {
         this.mockMvc = mockMvc;
+    }
+
+    @BeforeEach
+    void setUp() {
+        when(modelClient.chat("你好")).thenReturn("模型收到你的问题：你好");
     }
 
     @Test
