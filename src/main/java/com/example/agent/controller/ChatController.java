@@ -31,4 +31,11 @@ public class ChatController {
         logger.info("聊天响应：answer={}", response.getAnswer());
         return response;
     }
+
+    @PostMapping("/dify")
+    public ChatResponse chatByDify(
+            @Valid @RequestBody ChatRequest request) {
+
+        return chatService.chatByDify(request.getMessage());
+    }
 }

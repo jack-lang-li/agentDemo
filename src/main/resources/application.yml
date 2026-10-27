@@ -35,3 +35,9 @@ agent:
     base-url: https://api.deepseek.com
     api-key: ${OPENAI_API_KEY}
     model: deepseek-flash
+
+dify:
+  base-url: ${DIFY_BASE_URL:https://api.dify.ai/v1}
+  api-key: ${DIFY_API_KEY}
+  connect-timeout-millis: 10000
+  read-timeout-millis: 90000

@@ -1,5 +1,6 @@
 package com.example.agent.service;
 
+import com.example.agent.client.DifyWorkflowClient;
 import com.example.agent.client.ModelClient;
 import com.example.agent.dto.ChatResponse;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +15,20 @@ import org.springframework.stereotype.Service;
 public class ChatService {
 
     private final ModelClient modelClient;
+    private final DifyWorkflowClient difyWorkflowClient;
+
 
     public ChatResponse chat(String message) {
         String answer = modelClient.chat(message);
+        return new ChatResponse(answer);
+    }
+
+    public ChatResponse chatByDify(String message) {
+        String answer = difyWorkflowClient.run(
+                message,
+                "demo-user-1"
+        );
+
         return new ChatResponse(answer);
     }
 }

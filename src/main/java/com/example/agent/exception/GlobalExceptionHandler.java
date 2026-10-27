@@ -33,4 +33,15 @@ public class GlobalExceptionHandler {
         logger.warn("聊天请求体读取失败：{}", exception.getMessage());
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "请求体必须是合法的 JSON 对象");
     }
+
+    @ExceptionHandler(DifyCallException.class)
+    public ProblemDetail handleDifyCall(DifyCallException exception) {
+
+        logger.error("Dify 工作流调用失败", exception);
+
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                "智能体服务暂时不可用，请稍后重试"
+        );
+    }
 }
