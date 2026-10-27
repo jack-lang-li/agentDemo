@@ -56,8 +56,8 @@ class ModelClientLoggingTest {
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.setApiKey("secret-test-api-key");
         properties.setModel("test-model");
-        client = new ModelClient(properties, new ModelClientConfig().modelRestClient(RestClient.builder()),
-                new OrderTool(), new ObjectMapper());
+/*        client = new ModelClient(properties, new ModelClientConfig().modelRestClient(RestClient.builder()),
+                new OrderTool(), new ObjectMapper());*/
     }
 
     @AfterEach

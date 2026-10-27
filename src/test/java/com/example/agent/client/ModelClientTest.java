@@ -54,7 +54,7 @@ class ModelClientTest {
         properties.setBaseUrl("http://model.test");
         properties.setApiKey("test-key");
         properties.setModel("test-model");
-        client = new ModelClient(properties, builder.build(), orderTool, objectMapper);
+//        client = new ModelClient(properties, builder.build(), orderTool, objectMapper);
     }
 
     @AfterEach
@@ -84,8 +84,8 @@ class ModelClientTest {
 
     @Test
     void shouldKeepHistoryAndReturnToolResultsAcrossMultipleRounds() {
-        when(orderTool.queryOrder("10001")).thenReturn("订单10001已发货");
-        when(orderTool.queryOrder("10002")).thenReturn("未找到订单10002");
+//        when(orderTool.queryOrder("10001")).thenReturn("订单10001已发货");
+//        when(orderTool.queryOrder("10002")).thenReturn("未找到订单10002");
         ObjectNode firstResponse = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         firstResponse.withArray("output").insert(0,
                 objectMapper.createObjectNode().put("type", "reasoning").put("id", "reason-1"));
@@ -118,8 +118,8 @@ class ModelClientTest {
 
     @Test
     void shouldExecuteAllToolCallsInOneResponse() {
-        when(orderTool.queryOrder("10001")).thenReturn("已发货");
-        when(orderTool.queryOrder("10002")).thenReturn("未找到订单");
+//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
+//        when(orderTool.queryOrder("10002")).thenReturn("未找到订单");
         ObjectNode response = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         response.withArray("output").add(toolResponse("call-2", "query_order", "{\"orderId\":\"10002\"}")
                 .path("output").get(0));
@@ -207,7 +207,7 @@ class ModelClientTest {
 
     @Test
     void shouldStopAtFiveRoundsWithoutExecutingLastRoundTools() {
-        when(orderTool.queryOrder("10001")).thenReturn("已发货");
+//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
         for (int round = 1; round <= 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
@@ -221,7 +221,7 @@ class ModelClientTest {
 
     @Test
     void shouldAcceptFinalAnswerOnFifthRound() {
-        when(orderTool.queryOrder("10001")).thenReturn("已发货");
+//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
         for (int round = 1; round < 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));

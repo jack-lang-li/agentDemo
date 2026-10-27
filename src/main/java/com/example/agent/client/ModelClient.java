@@ -10,8 +10,10 @@ import com.example.agent.client.enums.ToolName;
 import com.example.agent.client.enums.ToolType;
 import com.example.agent.client.model.*;
 import com.example.agent.config.ModelProperties;
+import com.example.agent.tool.AgentTool;
 import com.example.agent.tool.LogisticsTool;
 import com.example.agent.tool.OrderTool;
+import com.example.agent.tool.ToolRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,9 +43,8 @@ public class ModelClient {
 
     private final ModelProperties modelProperties;
     private final RestClient modelRestClient;
-    private final OrderTool orderTool;
-    private final LogisticsTool logisticsTool;
     private final ObjectMapper objectMapper;
+    private final ToolRegistry toolRegistry;
 
     private static final int MAX_MODEL_ROUNDS = 5;
 
@@ -58,7 +59,7 @@ public class ModelClient {
         ModelRequest request = new ModelRequest();
         request.setModel(modelProperties.getModel());
         request.setInput(history);
-        request.setTools(List.of(buildOrderTool(), buildLogisticsTool()));
+        request.setTools(toolRegistry.definitions());
         request.setToolChoice(ToolChoice.AUTO.getValue());
 
         for (int round = 1; round <= MAX_MODEL_ROUNDS; round++) {
@@ -121,22 +122,6 @@ public class ModelClient {
         );
     }
 
-    private String requireTextArgument(
-            JsonNode arguments, String fieldName) {
-
-        JsonNode value = arguments.get(fieldName);
-
-        if (value == null
-                || !value.isTextual()
-                || value.asText().isBlank()) {
-            throw new IllegalArgumentException(
-                    fieldName + "必须是非空字符串"
-            );
-        }
-
-        return value.asText();
-    }
-
     private String extractAnswer(ModelResponse response) {
 
         for (OutputItem outputItem : response.getOutput()) {
@@ -156,62 +141,6 @@ public class ModelClient {
         return null;
     }
 
-    private ModelTool buildOrderTool() {
-
-        Map<String, Object> orderIdSchema = Map.of(
-                "type", JsonSchemaType.STRING.getValue(),
-                "description", "需要查询的订单编号"
-        );
-
-        Map<String, Object> parameters = Map.of(
-                "type", JsonSchemaType.OBJECT.getValue(),
-                "properties", Map.of(
-                        "orderId", orderIdSchema
-                ),
-                "required", List.of("orderId"),
-                "additionalProperties", false
-        );
-
-        ModelTool tool = new ModelTool();
-        tool.setType(ToolType.FUNCTION.getValue());
-        tool.setName(ToolName.QUERY_ORDER.getValue());
-        tool.setDescription(
-                "根据订单编号查询订单状态、物流公司和运单号。"
-                        + "需要查询订单物流，但尚无运单号时，可先使用此工具。"
-        );
-        tool.setParameters(parameters);
-
-        return tool;
-    }
-
-    private ModelTool buildLogisticsTool() {
-
-        Map<String, Object> trackingNoSchema = Map.of(
-                "type", JsonSchemaType.STRING.getValue(),
-                "description", "物流运单号，来自用户提供的信息或订单查询结果"
-        );
-
-        Map<String, Object> parameters = Map.of(
-                "type", JsonSchemaType.OBJECT.getValue(),
-                "properties", Map.of(
-                        "trackingNo", trackingNoSchema
-                ),
-                "required", List.of("trackingNo"),
-                "additionalProperties", false
-        );
-
-        ModelTool tool = new ModelTool();
-        tool.setType(ToolType.FUNCTION.getValue());
-        tool.setName(ToolName.QUERY_LOGISTICS.getValue());
-        tool.setDescription(
-                "根据物流运单号查询包裹当前位置和最新物流记录。"
-                        + "只有订单编号时，可先通过订单查询工具获取运单号。"
-                        + "缺少运单号时不得编造。"
-        );
-        tool.setParameters(parameters);
-
-        return tool;
-    }
 
     private void inspectToolCalls(ModelResponse response) {
 
@@ -266,26 +195,9 @@ public class ModelClient {
             }
 
             // 根据工具名称，读取对应参数并执行
-            Map<String, Object> result;
+            AgentTool tool = toolRegistry.getRequired(item.getName());
 
-            if (ToolName.QUERY_ORDER.getValue().equals(item.getName())) {
-
-                String orderId = requireTextArgument(arguments, "orderId");
-                result = orderTool.queryOrder(orderId);
-
-            } else if (ToolName.QUERY_LOGISTICS.getValue()
-                    .equals(item.getName())) {
-
-                String trackingNo = requireTextArgument(
-                        arguments, "trackingNo"
-                );
-                result = logisticsTool.queryLogistics(trackingNo);
-
-            } else {
-                throw new IllegalArgumentException(
-                        "不支持的工具：" + item.getName()
-                );
-            }
+            Map<String, Object> result = tool.execute(arguments);
 
             String resultJson;
             try {
