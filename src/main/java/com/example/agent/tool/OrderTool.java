@@ -1,17 +1,29 @@
 package com.example.agent.tool;
 
+import com.example.agent.client.enums.ShippingStatus;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 public class OrderTool {
 
-    public String queryOrder(String orderId) {
+    public Map<String, Object> queryOrder(String orderId) {
 
-        // 本节使用固定的模拟数据
+        // 固定的模拟订单数据
         if ("10001".equals(orderId)) {
-            return "订单10001，状态为已发货，物流公司为顺丰。";
+            return Map.of(
+                    "found", true,
+                    "orderId", orderId,
+                    "shippingStatus", ShippingStatus.SHIPPED.getValue(),
+                    "carrier", "顺丰",
+                    "trackingNo", "SF_TEST_10001"
+            );
         }
-        //模拟数据库查询结果
-        return "未找到订单" + orderId + "。";
+
+        return Map.of(
+                "found", false,
+                "orderId", orderId
+        );
     }
 }

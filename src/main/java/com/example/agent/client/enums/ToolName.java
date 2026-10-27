@@ -7,7 +7,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum ToolName {
-    QUERY_ORDER("query_order");
+    QUERY_ORDER("query_order"),
+    QUERY_LOGISTICS("query_logistics");
 
     private final String value;
 }

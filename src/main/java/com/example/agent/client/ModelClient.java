@@ -10,6 +10,7 @@ import com.example.agent.client.enums.ToolName;
 import com.example.agent.client.enums.ToolType;
 import com.example.agent.client.model.*;
 import com.example.agent.config.ModelProperties;
+import com.example.agent.tool.LogisticsTool;
 import com.example.agent.tool.OrderTool;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -41,6 +42,7 @@ public class ModelClient {
     private final ModelProperties modelProperties;
     private final RestClient modelRestClient;
     private final OrderTool orderTool;
+    private final LogisticsTool logisticsTool;
     private final ObjectMapper objectMapper;
 
     private static final int MAX_MODEL_ROUNDS = 5;
@@ -56,7 +58,7 @@ public class ModelClient {
         ModelRequest request = new ModelRequest();
         request.setModel(modelProperties.getModel());
         request.setInput(history);
-        request.setTools(List.of(buildOrderTool()));
+        request.setTools(List.of(buildOrderTool(), buildLogisticsTool()));
         request.setToolChoice(ToolChoice.AUTO.getValue());
 
         for (int round = 1; round <= MAX_MODEL_ROUNDS; round++) {
@@ -119,6 +121,22 @@ public class ModelClient {
         );
     }
 
+    private String requireTextArgument(
+            JsonNode arguments, String fieldName) {
+
+        JsonNode value = arguments.get(fieldName);
+
+        if (value == null
+                || !value.isTextual()
+                || value.asText().isBlank()) {
+            throw new IllegalArgumentException(
+                    fieldName + "必须是非空字符串"
+            );
+        }
+
+        return value.asText();
+    }
+
     private String extractAnswer(ModelResponse response) {
 
         for (OutputItem outputItem : response.getOutput()) {
@@ -158,7 +176,37 @@ public class ModelClient {
         tool.setType(ToolType.FUNCTION.getValue());
         tool.setName(ToolName.QUERY_ORDER.getValue());
         tool.setDescription(
-                "根据订单编号查询订单当前状态。当用户需要查询具体订单状态时使用。"
+                "根据订单编号查询订单状态、物流公司和运单号。"
+                        + "需要查询订单物流，但尚无运单号时，可先使用此工具。"
+        );
+        tool.setParameters(parameters);
+
+        return tool;
+    }
+
+    private ModelTool buildLogisticsTool() {
+
+        Map<String, Object> trackingNoSchema = Map.of(
+                "type", JsonSchemaType.STRING.getValue(),
+                "description", "物流运单号，来自用户提供的信息或订单查询结果"
+        );
+
+        Map<String, Object> parameters = Map.of(
+                "type", JsonSchemaType.OBJECT.getValue(),
+                "properties", Map.of(
+                        "trackingNo", trackingNoSchema
+                ),
+                "required", List.of("trackingNo"),
+                "additionalProperties", false
+        );
+
+        ModelTool tool = new ModelTool();
+        tool.setType(ToolType.FUNCTION.getValue());
+        tool.setName(ToolName.QUERY_LOGISTICS.getValue());
+        tool.setDescription(
+                "根据物流运单号查询包裹当前位置和最新物流记录。"
+                        + "只有订单编号时，可先通过订单查询工具获取运单号。"
+                        + "缺少运单号时不得编造。"
         );
         tool.setParameters(parameters);
 
@@ -182,6 +230,7 @@ public class ModelClient {
         }
     }
     private List<JsonNode> executeToolCalls(ModelResponse response) {
+
         List<JsonNode> results = new ArrayList<>();
 
         if (response == null || response.getOutput() == null) {
@@ -190,22 +239,15 @@ public class ModelClient {
 
         for (OutputItem item : response.getOutput()) {
 
-            if (!OutputItemType.FUNCTION_CALL.getValue().equals(item.getType())) {
+            if (!OutputItemType.FUNCTION_CALL.getValue()
+                    .equals(item.getType())) {
                 continue;
-            }
-
-            // 1. 只允许执行程序明确支持的工具
-            if (!ToolName.QUERY_ORDER.getValue().equals(item.getName())) {
-                throw new IllegalArgumentException(
-                        "不支持的工具：" + item.getName()
-                );
             }
 
             if (item.getCallId() == null || item.getCallId().isBlank()) {
                 throw new IllegalArgumentException("工具调用缺少call_id");
             }
 
-            // 2. 解析模型提供的参数字符串
             if (item.getArguments() == null) {
                 throw new IllegalArgumentException("工具调用缺少参数");
             }
@@ -223,31 +265,50 @@ public class ModelClient {
                 throw new IllegalArgumentException("工具参数必须是JSON对象");
             }
 
-            // 3. 检查订单编号
-            JsonNode orderIdNode = arguments.get("orderId");
-            if (orderIdNode == null
-                    || !orderIdNode.isTextual()
-                    || orderIdNode.asText().isBlank()) {
+            // 根据工具名称，读取对应参数并执行
+            Map<String, Object> result;
+
+            if (ToolName.QUERY_ORDER.getValue().equals(item.getName())) {
+
+                String orderId = requireTextArgument(arguments, "orderId");
+                result = orderTool.queryOrder(orderId);
+
+            } else if (ToolName.QUERY_LOGISTICS.getValue()
+                    .equals(item.getName())) {
+
+                String trackingNo = requireTextArgument(
+                        arguments, "trackingNo"
+                );
+                result = logisticsTool.queryLogistics(trackingNo);
+
+            } else {
                 throw new IllegalArgumentException(
-                        "orderId必须是非空字符串"
+                        "不支持的工具：" + item.getName()
                 );
             }
 
-            String orderId = orderIdNode.asText();
-
-            // 4. 真正执行Java工具
-            String result = orderTool.queryOrder(orderId);
+            String resultJson;
+            try {
+                resultJson = objectMapper.writeValueAsString(result);
+            } catch (JsonProcessingException exception) {
+                throw new IllegalStateException(
+                        "工具结果序列化失败", exception
+                );
+            }
 
             results.add(objectMapper.valueToTree(Map.of(
                     "type", OutputItemType.FUNCTION_CALL_OUTPUT.getValue(),
                     "call_id", item.getCallId(),
-                    "output", result
+                    "output", resultJson
             )));
+
             logger.info(
-                    "工具执行完成：name={}, callId={}, result={}",
-                    item.getName(), item.getCallId(), result
+                    "工具执行完成：name={}, arguments={}, callId={}, result={}",
+                    item.getName(), item.getArguments(),
+                    item.getCallId(), resultJson
             );
         }
+
         return results;
     }
 
