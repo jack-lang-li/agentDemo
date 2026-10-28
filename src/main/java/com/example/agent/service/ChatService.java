@@ -6,6 +6,8 @@ import com.example.agent.dto.ChatResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.function.Consumer;
+
 /**
  * 编排 AI 业务流程，目前仅调用模型并组装响应。
  * 后续学习 Agent 时，业务编排从这一层逐步演进。
@@ -30,5 +32,17 @@ public class ChatService {
         );
 
         return new ChatResponse(answer);
+    }
+
+    public void chatStream(
+            String message,
+            Consumer<String> onDelta,
+            Consumer<String> onStatus) {
+
+        modelClient.chatStream(
+                message,
+                onDelta,
+                onStatus
+        );
     }
 }
