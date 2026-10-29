@@ -1,7 +1,10 @@
 package com.example.agent.tool;
 
+import com.example.agent.client.enums.ToolErrorCode;
 import com.example.agent.client.model.ToolCall;
+import com.example.agent.client.model.ToolExecutionResult;
 import com.example.agent.client.model.ToolResult;
+import com.example.agent.exception.InvalidToolArgumentsException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,13 +69,52 @@ public class ToolCallExecutor {
 
         List<ToolResult> results = new ArrayList<>();
         for (PreparedCall item : prepared) {
-            Object result = item.tool().execute(item.arguments());
+
+            ToolExecutionResult executionResult;
+
             try {
-                results.add(new ToolResult(item.call().callId(), objectMapper.writeValueAsString(result)));
-            } catch (JsonProcessingException exception) {
-                throw new IllegalStateException("工具结果序列化失败", exception);
+                // 1. 工具正常返回：包装业务数据。
+                Object businessData = item.tool().execute(item.arguments());
+                executionResult = ToolExecutionResult.success(businessData);
+
+            } catch (InvalidToolArgumentsException exception) {
+
+                // 2. 只把明确的输入错误转换成模型可读取的结果。
+                // 此处不重试，后续由模型根据错误信息决定是否重新调用。
+                executionResult = ToolExecutionResult.failure(
+                        ToolErrorCode.INVALID_ARGUMENTS,
+                        exception.getMessage()
+                );
+
+                logger.warn(
+                        "工具参数校验失败：name={}, callId={}, message={}",
+                        item.call().name(),
+                        item.call().callId(),
+                        exception.getMessage()
+                );
             }
-            logger.info("工具执行完成：name={}, callId={}", item.call().name(), item.call().callId());
+
+            // 3. 序列化整个执行结果，而不再只序列化业务数据。
+            String output;
+            try {
+                output = objectMapper.writeValueAsString(executionResult);
+            } catch (JsonProcessingException exception) {
+                // 序列化失败属于程序处理错误，本节继续向上传播。
+                throw new IllegalStateException(
+                        "工具结果序列化失败", exception
+                );
+            }
+
+            // 4. 保留原callId。
+            // AgentRunner和协议适配器继续使用现有ToolResult完成回传。
+            results.add(new ToolResult(item.call().callId(), output));
+
+            logger.info(
+                    "工具执行完成：name={}, callId={}, status={}",
+                    item.call().name(),
+                    item.call().callId(),
+                    executionResult.status().getValue()
+            );
         }
         return List.copyOf(results);
     }

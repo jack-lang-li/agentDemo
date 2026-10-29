@@ -8,6 +8,7 @@ import com.example.agent.client.responses.ResponsesStreamReader;
 import com.example.agent.config.ModelProperties;
 import com.example.agent.tool.OrderTool;
 import com.example.agent.tool.ToolCallExecutor;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
@@ -20,8 +21,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseActions;
+import org.springframework.test.web.client.RequestMatcher;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -29,6 +32,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.inOrder;
@@ -110,7 +114,7 @@ class AgentRunnerProtocolTest {
                 .andExpect(jsonPath("$.input[2].type").value("function_call"))
                 .andExpect(jsonPath("$.input[3].type").value("function_call_output"))
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
-                .andExpect(jsonPath("$.input[3].output").value("{\"summary\":\"订单10001已发货\"}"))
+                .andExpect(successfulToolOutput(3, "订单10001已发货"))
                 .andExpect(jsonPath("$.tool_choice").value("auto"))
                 .andRespond(withSuccess(toolResponse("call-2", "query_order", "{\"orderId\":\"10002\"}")
                         .toString(), MediaType.APPLICATION_JSON));
@@ -119,7 +123,7 @@ class AgentRunnerProtocolTest {
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
                 .andExpect(jsonPath("$.input[5].type").value("function_call_output"))
                 .andExpect(jsonPath("$.input[5].call_id").value("call-2"))
-                .andExpect(jsonPath("$.input[5].output").value("{\"summary\":\"未找到订单10002\"}"))
+                .andExpect(successfulToolOutput(5, "未找到订单10002"))
                 .andRespond(withSuccess(answerResponse("订单查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询两个订单")).isEqualTo("订单查询完成");
@@ -140,9 +144,9 @@ class AgentRunnerProtocolTest {
         expectRequest()
                 .andExpect(jsonPath("$.input.length()").value(5))
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
-                .andExpect(jsonPath("$.input[3].output").value("{\"summary\":\"已发货\"}"))
+                .andExpect(successfulToolOutput(3, "已发货"))
                 .andExpect(jsonPath("$.input[4].call_id").value("call-2"))
-                .andExpect(jsonPath("$.input[4].output").value("{\"summary\":\"未找到订单\"}"))
+                .andExpect(successfulToolOutput(4, "未找到订单"))
                 .andRespond(withSuccess(answerResponse("查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询两个订单")).isEqualTo("查询完成");
@@ -208,13 +212,80 @@ class AgentRunnerProtocolTest {
 
     @ParameterizedTest
     @NullSource
-    @ValueSource(strings = {"not-json", "null", "[]", "{}", "{\"orderId\":null}",
-            "{\"orderId\":10001}", "{\"orderId\":\"\"}", "{\"orderId\":\"   \"}"})
-    void shouldRejectInvalidToolArguments(String arguments) {
+    @ValueSource(strings = {"not-json", "null", "[]"})
+    void shouldRejectInvalidToolArgumentStructure(String arguments) {
         expectRequest().andRespond(withSuccess(toolResponse("call-1", "query_order", arguments).toString(),
                 MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> chat("查询订单")).isInstanceOf(IllegalArgumentException.class);
+        verify(orderTool, never()).queryOrder(anyString());
+    }
+
+    @Test
+    void shouldContinueAfterArgumentErrorAndReturnAnswer() {
+        // 模拟三次上游响应，只验证程序的反馈闭环，不依赖真实模型碰巧生成错误参数。
+        expectRequest().andRespond(withSuccess(
+                toolResponse("bad-call", "query_order", "{\"orderId\":10001}").toString(),
+                MediaType.APPLICATION_JSON));
+
+        expectRequest()
+                .andExpect(jsonPath("$.input.length()").value(3))
+                .andExpect(jsonPath("$.input[1].call_id").value("bad-call"))
+                .andExpect(jsonPath("$.input[2].type").value("function_call_output"))
+                .andExpect(jsonPath("$.input[2].call_id").value("bad-call"))
+                .andExpect(request -> {
+                    JsonNode body = objectMapper.readTree(
+                            ((MockClientHttpRequest) request).getBodyAsString());
+                    JsonNode failure = objectMapper.readTree(body.path("input").path(2).path("output").asText());
+                    assertThat(failure.path("status").asText()).isEqualTo("ERROR");
+                    assertThat(failure.path("data").isNull()).isTrue();
+                    assertThat(failure.path("error").path("code").asText()).isEqualTo("INVALID_ARGUMENTS");
+                    assertThat(failure.path("error").path("message").asText())
+                            .isEqualTo("orderId必须是非空字符串");
+                    verify(orderTool, never()).queryOrder(anyString());
+                })
+                .andRespond(withSuccess(
+                        toolResponse("corrected-call", "query_order", "{\"orderId\":\"10001\"}").toString(),
+                        MediaType.APPLICATION_JSON));
+
+        expectRequest()
+                .andExpect(jsonPath("$.input.length()").value(5))
+                .andExpect(jsonPath("$.input[2].call_id").value("bad-call"))
+                .andExpect(jsonPath("$.input[3].call_id").value("corrected-call"))
+                .andExpect(jsonPath("$.input[4].type").value("function_call_output"))
+                .andExpect(jsonPath("$.input[4].call_id").value("corrected-call"))
+                .andExpect(request -> {
+                    JsonNode body = objectMapper.readTree(
+                            ((MockClientHttpRequest) request).getBodyAsString());
+                    // 失败历史不能被成功结果覆盖，两次结果分别关联各自的调用编号。
+                    JsonNode failure = objectMapper.readTree(body.path("input").path(2).path("output").asText());
+                    JsonNode success = objectMapper.readTree(body.path("input").path(4).path("output").asText());
+                    assertThat(failure.path("status").asText()).isEqualTo("ERROR");
+                    assertThat(success.path("status").asText()).isEqualTo("SUCCESS");
+                    assertThat(success.path("error").isNull()).isTrue();
+                    assertThat(success.path("data").path("found").asBoolean()).isTrue();
+                    assertThat(success.path("data").path("orderId").asText()).isEqualTo("10001");
+                })
+                .andRespond(withSuccess(answerResponse("订单10001已发货"), MediaType.APPLICATION_JSON));
+
+        assertThat(chat("查询订单10001的状态")).isEqualTo("订单10001已发货");
+        verify(orderTool, times(1)).queryOrder("10001");
+        verify(orderTool, times(1)).queryOrder(anyString());
+    }
+
+    @Test
+    void shouldStopAtRoundLimitWhenModelRepeatsInvalidArguments() {
+        expectRequest().andRespond(withSuccess(
+                toolResponse("bad-1", "query_order", "{}").toString(), MediaType.APPLICATION_JSON));
+        expectRequest()
+                .andExpect(jsonPath("$.input[2].call_id").value("bad-1"))
+                .andRespond(withSuccess(toolResponse("bad-2", "query_order", "{}").toString(),
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> runner.run(new AgentRequest(null, "查询订单", List.of(orderTool), 2)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("轮数上限");
+        // 第一轮尝试执行并反馈参数错误；最后一轮已无法回传结果，不再执行。
+        verify(orderTool, times(1)).execute(any(JsonNode.class));
         verify(orderTool, never()).queryOrder(anyString());
     }
 
@@ -256,6 +327,21 @@ class AgentRunnerProtocolTest {
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer test-key"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+    }
+
+    /** 解析output内部的JSON，独立验证结果契约，不依赖属性顺序或生产包装工厂。 */
+    private RequestMatcher successfulToolOutput(int inputIndex, String summary) {
+        return request -> {
+            JsonNode body = objectMapper.readTree(((MockClientHttpRequest) request).getBodyAsString());
+            JsonNode item = body.path("input").path(inputIndex);
+            assertThat(item.path("type").asText()).isEqualTo("function_call_output");
+            assertThat(item.path("output").isTextual()).isTrue();
+            JsonNode actual = objectMapper.readTree(item.path("output").asText());
+            ObjectNode expected = objectMapper.createObjectNode().put("status", "SUCCESS");
+            expected.set("data", objectMapper.valueToTree(Map.of("summary", summary)));
+            expected.putNull("error");
+            assertThat(actual).isEqualTo(expected);
+        };
     }
 
     private ObjectNode toolResponse(String callId, String name, String arguments) {

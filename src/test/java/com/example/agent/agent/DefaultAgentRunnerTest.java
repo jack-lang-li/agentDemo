@@ -3,6 +3,7 @@ package com.example.agent.agent;
 import com.example.agent.client.ModelClient;
 import com.example.agent.client.model.ModelInput;
 import com.example.agent.support.RecordingTool;
+import com.example.agent.tool.OrderTool;
 import com.example.agent.tool.ToolCallExecutor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,10 @@ import static com.example.agent.support.ModelFixtures.proposal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,7 +37,8 @@ import static org.mockito.Mockito.when;
 class DefaultAgentRunnerTest {
 
     private final ModelClient model = mock(ModelClient.class);
-    private final AgentRunner runner = new DefaultAgentRunner(model, new ToolCallExecutor(new ObjectMapper()));
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final AgentRunner runner = new DefaultAgentRunner(model, new ToolCallExecutor(mapper));
 
     @Test
     void shouldAllowAgentRequestWithoutAnyTools() {
@@ -72,7 +77,7 @@ class DefaultAgentRunnerTest {
     }
 
     @Test
-    void shouldUseSameLoopForStreamingToolCallsAndPreserveStatusOrder() {
+    void shouldUseSameLoopForStreamingToolCallsAndPreserveStatusOrder() throws Exception {
         RecordingTool tool = new RecordingTool("business_query", Map.of("ok", true));
         AtomicInteger round = new AtomicInteger();
         when(model.generateStream(any(), any())).thenAnswer(invocation -> {
@@ -95,8 +100,55 @@ class DefaultAgentRunnerTest {
         assertThat(tool.executions()).hasValue(1);
         ArgumentCaptor<ModelInput> inputs = ArgumentCaptor.forClass(ModelInput.class);
         verify(model, times(2)).generateStream(inputs.capture(), any());
-        assertThat(inputs.getAllValues().get(1).turns().get(0).toolResults().get(0).output())
-                .isEqualTo("{\"ok\":true}");
+        var payload = mapper.readTree(inputs.getAllValues().get(1).turns().get(0).toolResults().get(0).output());
+        assertThat(payload.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(payload.path("data").path("ok").asBoolean()).isTrue();
+        assertThat(payload.path("error").isNull()).isTrue();
+    }
+
+    @Test
+    void shouldContinueStreamingAfterArgumentErrorAndPreserveBothCallIds() throws Exception {
+        OrderTool tool = spy(new OrderTool());
+        AtomicInteger round = new AtomicInteger();
+        when(model.generateStream(any(), any())).thenAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            int current = round.incrementAndGet();
+            if (current == 1) {
+                return proposal("bad-call", tool.name(), "{\"orderId\":10001}");
+            }
+
+            var firstResult = input.turns().get(0).toolResults().get(0);
+            assertThat(firstResult.callId()).isEqualTo("bad-call");
+            var failure = mapper.readTree(firstResult.output());
+            assertThat(failure.path("status").asText()).isEqualTo("ERROR");
+            assertThat(failure.path("error").path("code").asText()).isEqualTo("INVALID_ARGUMENTS");
+            if (current == 2) {
+                verify(tool, never()).queryOrder(anyString());
+                return proposal("corrected-call", tool.name(), "{\"orderId\":\"10001\"}");
+            }
+
+            assertThat(input.turns()).hasSize(2);
+            var secondResult = input.turns().get(1).toolResults().get(0);
+            assertThat(secondResult.callId()).isEqualTo("corrected-call");
+            var success = mapper.readTree(secondResult.output());
+            assertThat(success.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(success.path("data").path("orderId").asText()).isEqualTo("10001");
+            Consumer<String> delta = invocation.getArgument(1);
+            delta.accept("订单10001已发货");
+            return answer("订单10001已发货");
+        });
+        List<String> deltas = new ArrayList<>();
+        List<String> statuses = new ArrayList<>();
+
+        runner.runStream(new AgentRequest("查询订单10001", List.of(tool)), deltas::add, statuses::add);
+
+        assertThat(deltas).containsExactly("订单10001已发货");
+        assertThat(statuses).containsExactly("正在请求模型，第 1 轮", "正在执行工具",
+                "工具执行完成，正在继续生成回答", "正在请求模型，第 2 轮", "正在执行工具",
+                "工具执行完成，正在继续生成回答", "正在请求模型，第 3 轮");
+        verify(model, times(3)).generateStream(any(), any());
+        verify(tool, times(1)).queryOrder("10001");
+        verify(tool, times(1)).queryOrder(anyString());
     }
 
     @Test
@@ -143,8 +195,9 @@ class DefaultAgentRunnerTest {
                 return proposal("call-" + input.message(), name, "{}");
             }
             assertThat(input.turns()).hasSize(1);
-            assertThat(input.turns().get(0).toolResults().get(0).output())
-                    .isEqualTo("\"" + input.message() + "\"");
+            var payload = mapper.readTree(input.turns().get(0).toolResults().get(0).output());
+            assertThat(payload.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(payload.path("data").asText()).isEqualTo(input.message());
             return answer(input.message() + " 的回答");
         });
         var workers = Executors.newFixedThreadPool(2);

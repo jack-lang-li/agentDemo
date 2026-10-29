@@ -4,6 +4,7 @@ import com.example.agent.client.enums.JsonSchemaType;
 import com.example.agent.client.enums.ToolName;
 import com.example.agent.client.enums.ToolType;
 import com.example.agent.client.model.ModelTool;
+import com.example.agent.exception.InvalidToolArgumentsException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
@@ -52,7 +53,7 @@ public class LogisticsTool implements AgentTool {
     public Map<String, Object> execute(JsonNode arguments) {
 
         if (arguments == null || !arguments.isObject()) {
-            throw new IllegalArgumentException(
+            throw new InvalidToolArgumentsException(
                     "物流工具参数必须是JSON对象"
             );
         }
@@ -62,7 +63,7 @@ public class LogisticsTool implements AgentTool {
         if (trackingNoNode == null
                 || !trackingNoNode.isTextual()
                 || trackingNoNode.asText().isBlank()) {
-            throw new IllegalArgumentException(
+            throw new InvalidToolArgumentsException(
                     "trackingNo必须是非空字符串"
             );
         }

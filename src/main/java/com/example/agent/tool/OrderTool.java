@@ -5,6 +5,7 @@ import com.example.agent.client.enums.ShippingStatus;
 import com.example.agent.client.enums.ToolName;
 import com.example.agent.client.enums.ToolType;
 import com.example.agent.client.model.ModelTool;
+import com.example.agent.exception.InvalidToolArgumentsException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
@@ -52,7 +53,7 @@ public class OrderTool implements AgentTool {
     public Map<String, Object> execute(JsonNode arguments) {
 
         if (arguments == null || !arguments.isObject()) {
-            throw new IllegalArgumentException(
+            throw new InvalidToolArgumentsException(
                     "订单工具参数必须是JSON对象"
             );
         }
@@ -62,11 +63,12 @@ public class OrderTool implements AgentTool {
         if (orderIdNode == null
                 || !orderIdNode.isTextual()
                 || orderIdNode.asText().isBlank()) {
-            throw new IllegalArgumentException(
+            throw new InvalidToolArgumentsException(
                     "orderId必须是非空字符串"
             );
         }
 
+        // 参数校验通过后，才执行实际查询。
         return queryOrder(orderIdNode.asText());
     }
 
