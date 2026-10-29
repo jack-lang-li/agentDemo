@@ -2,6 +2,8 @@ package com.example.agent;
 
 import com.example.agent.client.DifyWorkflowClient;
 import com.example.agent.client.ModelClient;
+import com.example.agent.client.model.ModelInput;
+import com.example.agent.client.model.ModelResult;
 import com.example.agent.exception.DifyCallException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,12 +20,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -69,12 +72,10 @@ class ChatIntegrationTest {
     void shouldStreamLocalAgentAnswerAndOnlyThenSendDone() throws Exception {
         doAnswer(invocation -> {
             Consumer<String> onDelta = invocation.getArgument(1);
-            Consumer<String> onStatus = invocation.getArgument(2);
-            onStatus.accept("正在执行工具");
             onDelta.accept("你好，");
             onDelta.accept("我可以帮你查询订单。");
-            return null;
-        }).when(modelClient).chatStream(eq("你好"), any(), any());
+            return new ModelResult("你好，我可以帮你查询订单。", List.of(), List.of());
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
 
         MvcResult result = runStream("你好");
 
@@ -86,12 +87,14 @@ class ChatIntegrationTest {
                 .andExpect(response -> assertThat(response.getResponse()
                         .getContentAsString(StandardCharsets.UTF_8))
                         .startsWith("event: status\ndata: {\"message\":\"请求已接收\"}\n\n")
-                        .contains("event: status\ndata: {\"message\":\"正在执行工具\"}\n\n",
+                        .contains("event: status\ndata: {\"message\":\"正在请求模型，第 1 轮\"}\n\n",
                                 "event: delta\ndata: {\"text\":\"你好，\"}\n\n",
                                 "event: delta\ndata: {\"text\":\"我可以帮你查询订单。\"}\n\n")
                         .endsWith("event: done\ndata: {}\n\n")
                         .doesNotContain("event: error"));
-        verify(modelClient).chatStream(eq("你好"), any(), any());
+        verify(modelClient).generateStream(argThat(input -> input.message().equals("你好")
+                && input.tools().stream().map(tool -> tool.getName()).toList()
+                .equals(List.of("query_order", "query_logistics"))), any());
         verifyNoInteractions(difyWorkflowClient);
     }
 
@@ -101,7 +104,7 @@ class ChatIntegrationTest {
             Consumer<String> onDelta = invocation.getArgument(1);
             onDelta.accept("已经生成的部分正文");
             throw new IllegalStateException("模拟模型执行失败");
-        }).when(modelClient).chatStream(eq("你好"), any(), any());
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
 
         MvcResult result = runStream("你好");
 

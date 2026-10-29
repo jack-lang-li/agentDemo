@@ -14,8 +14,8 @@ import java.util.Map;
 public class LogisticsTool implements AgentTool {
 
     @Override
-    public ToolName name() {
-        return ToolName.QUERY_LOGISTICS;
+    public String name() {
+        return ToolName.QUERY_LOGISTICS.getValue();
     }
 
     @Override
@@ -37,7 +37,7 @@ public class LogisticsTool implements AgentTool {
 
         ModelTool tool = new ModelTool();
         tool.setType(ToolType.FUNCTION.getValue());
-        tool.setName(name().getValue());
+        tool.setName(name());
         tool.setDescription(
                 "根据物流运单号查询包裹当前位置和最新物流记录。"
                         + "只有订单编号时，可先通过订单查询工具获取运单号。"

@@ -1,8 +1,13 @@
-package com.example.agent.client;
+package com.example.agent.agent;
+
+import com.example.agent.client.ModelClient;
+import com.example.agent.client.responses.ResponsesModelClient;
+import com.example.agent.client.responses.ResponsesModelCodec;
+import com.example.agent.client.responses.ResponsesStreamReader;
 
 import com.example.agent.config.ModelProperties;
 import com.example.agent.tool.OrderTool;
-import com.example.agent.tool.ToolRegistry;
+import com.example.agent.tool.ToolCallExecutor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
@@ -42,12 +47,12 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  * 使用模拟 HTTP 响应验证模型协议和 Agent 循环，不访问外部模型服务。
  * JSON 样例和断言保留协议原值，独立校验枚举值的实际序列化结果。
  */
-class ModelClientTest {
+class AgentRunnerProtocolTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private MockRestServiceServer server;
     private OrderTool orderTool;
-    private ModelClient client;
+    private AgentRunner runner;
 
     @BeforeEach
     void setUp() {
@@ -59,8 +64,10 @@ class ModelClientTest {
         properties.setBaseUrl("http://model.test");
         properties.setApiKey("test-key");
         properties.setModel("test-model");
-        client = new ModelClient(properties, builder.build(), objectMapper,
-                new ToolRegistry(List.of(orderTool)));
+        ResponsesModelCodec codec = new ResponsesModelCodec(objectMapper);
+        ModelClient modelClient = new ResponsesModelClient(properties, builder.build(), builder.build(),
+                codec, new ResponsesStreamReader(objectMapper, codec));
+        runner = new DefaultAgentRunner(modelClient, new ToolCallExecutor(objectMapper));
     }
 
     @AfterEach
@@ -84,7 +91,7 @@ class ModelClientTest {
                 .andExpect(jsonPath("$.tools[0].parameters.additionalProperties").value(false))
                 .andRespond(withSuccess(answerResponse("请提供订单编号"), MediaType.APPLICATION_JSON));
 
-        assertThat(client.chat("查询订单")).isEqualTo("请提供订单编号");
+        assertThat(chat("查询订单")).isEqualTo("请提供订单编号");
         verify(orderTool, never()).queryOrder(anyString());
     }
 
@@ -115,7 +122,7 @@ class ModelClientTest {
                 .andExpect(jsonPath("$.input[5].output").value("{\"summary\":\"未找到订单10002\"}"))
                 .andRespond(withSuccess(answerResponse("订单查询完成"), MediaType.APPLICATION_JSON));
 
-        assertThat(client.chat("查询两个订单")).isEqualTo("订单查询完成");
+        assertThat(chat("查询两个订单")).isEqualTo("订单查询完成");
         var ordered = inOrder(orderTool);
         ordered.verify(orderTool).queryOrder("10001");
         ordered.verify(orderTool).queryOrder("10002");
@@ -138,7 +145,7 @@ class ModelClientTest {
                 .andExpect(jsonPath("$.input[4].output").value("{\"summary\":\"未找到订单\"}"))
                 .andRespond(withSuccess(answerResponse("查询完成"), MediaType.APPLICATION_JSON));
 
-        assertThat(client.chat("查询两个订单")).isEqualTo("查询完成");
+        assertThat(chat("查询两个订单")).isEqualTo("查询完成");
         verify(orderTool).queryOrder("10001");
         verify(orderTool).queryOrder("10002");
         verify(orderTool, times(2)).queryOrder(anyString());
@@ -152,7 +159,7 @@ class ModelClientTest {
         response.put("status", status);
         expectRequest().andRespond(withSuccess(response.toString(), MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("模型响应未完成");
         verify(orderTool, never()).queryOrder(anyString());
     }
@@ -162,7 +169,7 @@ class ModelClientTest {
     void shouldRejectResponseWithoutOutputArray(String response) {
         expectRequest().andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("缺少有效的output数组");
         verify(orderTool, never()).queryOrder(anyString());
     }
@@ -172,7 +179,7 @@ class ModelClientTest {
     void shouldRejectBlankFinalAnswer(String answer) {
         expectRequest().andRespond(withSuccess(answerResponse(answer), MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("未返回有效回答");
         verify(orderTool, never()).queryOrder(anyString());
     }
@@ -182,7 +189,7 @@ class ModelClientTest {
         expectRequest().andRespond(withSuccess(toolResponse("call-1", "unknown_tool", "{}").toString(),
                 MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不支持的工具");
         verify(orderTool, never()).queryOrder(anyString());
     }
@@ -194,7 +201,7 @@ class ModelClientTest {
         expectRequest().andRespond(withSuccess(toolResponse(callId, "query_order", "{\"orderId\":\"10001\"}")
                 .toString(), MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("缺少call_id");
         verify(orderTool, never()).queryOrder(anyString());
     }
@@ -207,7 +214,7 @@ class ModelClientTest {
         expectRequest().andRespond(withSuccess(toolResponse("call-1", "query_order", arguments).toString(),
                 MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.chat("查询订单")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> chat("查询订单")).isInstanceOf(IllegalArgumentException.class);
         verify(orderTool, never()).queryOrder(anyString());
     }
 
@@ -219,7 +226,7 @@ class ModelClientTest {
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
         }
 
-        assertThatThrownBy(() -> client.chat("查询订单"))
+        assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("达到模型调用轮数上限");
         verify(orderTool, times(4)).queryOrder("10001");
         verify(orderTool, times(4)).queryOrder(anyString());
@@ -234,9 +241,14 @@ class ModelClientTest {
         }
         expectRequest().andRespond(withSuccess(answerResponse("最终回答"), MediaType.APPLICATION_JSON));
 
-        assertThat(client.chat("查询订单")).isEqualTo("最终回答");
+        assertThat(chat("查询订单")).isEqualTo("最终回答");
         verify(orderTool, times(4)).queryOrder("10001");
         verify(orderTool, times(4)).queryOrder(anyString());
+    }
+
+    private String chat(String message) {
+        // 本测试业务只开放订单工具，公共模型客户端和 Agent 不自动补充全局工具。
+        return runner.run(new AgentRequest(message, List.of(orderTool)));
     }
 
     private ResponseActions expectRequest() {

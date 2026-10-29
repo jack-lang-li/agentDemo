@@ -1,5 +1,8 @@
 # 第一轮改造：聊天业务接口与执行策略
 
+本文保留第一轮的设计记录。第二轮已将 ModelClient 抽成单次调用接口，
+并将 Agent 循环与业务工具选择分开；当前复用方式见 [第二轮改造说明](model-capabilities-refactor.md)。
+
 本轮把聊天入口与执行方式分开，复用现有客户端，保持已联调的 HTTP 协议。
 `ModelClient` 的 Agent 循环、工具执行、模型 HTTP 通信和上游 SSE 解析留到第二轮拆分。
 

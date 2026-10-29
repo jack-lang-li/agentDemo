@@ -15,8 +15,8 @@ import java.util.Map;
 public class OrderTool implements AgentTool {
 
     @Override
-    public ToolName name() {
-        return ToolName.QUERY_ORDER;
+    public String name() {
+        return ToolName.QUERY_ORDER.getValue();
     }
 
     @Override
@@ -38,7 +38,7 @@ public class OrderTool implements AgentTool {
 
         ModelTool tool = new ModelTool();
         tool.setType(ToolType.FUNCTION.getValue());
-        tool.setName(name().getValue());
+        tool.setName(name());
         tool.setDescription(
                 "根据订单编号查询订单状态、物流公司和运单号。"
                         + "需要查询订单物流，但尚无运单号时，可先使用此工具。"

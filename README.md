@@ -7,14 +7,15 @@ Java 工具执行、Agent 自动循环、SSE 增量输出，以及 Dify Workflow
 
 ## 当前架构
 
-第一轮结构改造已将聊天业务入口与执行策略分开：
+两轮结构改造已将聊天入口、业务工具选择、Agent 循环和单次模型通信分开：
 
 ```text
 ChatController
   → ChatService 接口
   → DefaultChatService
   → ChatExecutorRegistry
-      ├─ LocalAgentExecutor → ModelClient → 模型 + ToolRegistry + Agent 循环
+      ├─ LocalAgentExecutor → AgentRunner → ModelClient → ResponsesModelClient → 模型
+      │                      └─ ToolCallExecutor → 本次业务显式提供的工具
       └─ DifyWorkflowExecutor → DifyWorkflowClient → 已发布 Dify Workflow
 ```
 
@@ -22,9 +23,12 @@ ChatController
 - Dify 当前使用 blocking 模式，等待工作流完成后返回 JSON。
 - 执行器通过稳定编码注册，新增实现可以复用相同业务入口与查找逻辑。
 - Agent 上下文在本次请求内部维护，尚未提供跨请求的多轮会话记忆。
+- 普通业务可以直接注入 ModelClient 进行文本生成，不携带任何默认业务工具。
+- 需要自动工具调用的业务通过 AgentRequest 显式提供提示词、工具和最大轮数。
 
 各文件职责、接口设计原因、回调规则、扩展步骤和本轮验证范围见
-[第一轮改造说明](docs/chat-executor-refactor.md)。
+[第二轮改造与业务复用示例](docs/model-capabilities-refactor.md)。
+[第一轮改造说明](docs/chat-executor-refactor.md) 保留了执行策略层的设计过程。
 
 ## 技术栈
 
@@ -48,12 +52,14 @@ mvn spring-boot:run
 | agent.model.base-url | 模型服务地址，当前客户端在此基础上访问 /v1/responses |
 | agent.model.api-key | 模型平台密钥 |
 | agent.model.model | 请求使用的模型名称 |
+| agent.model.connect-timeout-millis | 模型建连超时，默认 10000 毫秒 |
+| agent.model.read-timeout-millis | 模型读取超时，默认 90000 毫秒，同步与流式共用 |
 | dify.base-url | Dify API 根地址，例如 https://api.dify.ai/v1 |
 | dify.api-key | 已发布 Workflow 所属应用的 API Key |
 | dify.connect-timeout-millis | Dify 建连超时 |
 | dify.read-timeout-millis | Dify 读取超时 |
 
-当前 ModelClient 使用 Responses 协议；修改 provider 名称本身不会自动切换模型通信协议。
+ModelClient 是公共单次调用接口，当前实现使用 Responses 协议；修改 provider 名称本身不会自动切换通信协议。
 Dify Workflow 的输入变量需包含 question，输出变量需包含非空字符串 answer。
 
 当前没有登录系统，Controller 沿用测试用户 demo-user-1，并通过 ChatCommand 向下传递。
@@ -100,9 +106,12 @@ JSON 不合法或请求体缺失也返回 HTTP 400。Dify 调用失败沿用 HTT
 
 - OrderTool 使用模拟订单数据；订单 10001 可返回运单号 SF_TEST_10001。
 - LogisticsTool 使用模拟物流数据，可根据上述运单号返回物流进度。
-- ToolRegistry 收集工具定义并按名称查找执行实现。
-- ModelClient 最多执行 5 轮模型请求；第一轮改造未调整内部 Agent 循环。
-- 同步模型客户端使用缓冲响应打印原始 JSON 日志；流式客户端独立创建，
+- LocalAgentExecutor 显式提供上述两个工具；其他业务可提供自己的工具集合。
+- ToolRegistry 按请求创建，仅查找本次提供的工具，不自动收集全局业务工具。
+- AgentRunner 默认最多执行 5 轮模型请求，业务可在 AgentRequest 中设置自己的限制。
+- ModelClient 每次只请求一次模型，不执行 Java 工具，不自动循环。
+- 工具名可由业务自行定义；工具结果支持 Map、列表、DTO、字符串等可序列化对象。
+- 同步模型客户端使用缓冲响应打印原始 JSON 日志；流式客户端独立配置并复用，
   不使用读取完整响应体的日志拦截器，以保留增量输出。
 - 日志配置位于 application.yml，默认文件为 logs/spring-agent-learning.log。
   请求正文与工具结果可能包含业务内容；模型日志不打印 Authorization 请求头。
@@ -120,7 +129,12 @@ mvn clean verify
   错误响应、输入校验及健康检查。
 - ChatExecutorRegistryTest：验证重复注册、未知编码、空注册和流式能力边界。
 - DefaultChatServiceTest：验证新增策略扩展、回调顺序和写入异常传播。
-- ModelClientTest：使用 MockRestServiceServer 验证模型协议、工具调用与轮数上限。
+- AgentRunnerProtocolTest：使用 MockRestServiceServer 验证模型协议、工具调用与轮数上限。
+- DefaultAgentRunnerTest：验证业务工具范围、流式循环及并发请求隔离。
+- ResponsesModelClientTest：验证普通业务的单次生成与流式接口。
+- ResponsesModelCodecTest、ResponsesStreamReaderTest：验证上下文、正文和上游流式协议。
+- ToolCallExecutorTest：验证工具范围、重复调用标识和多种业务结果类型。
+- ModelClientWiringTest、ModelStreamingTransportTest：验证真实适配器接线及首段增量及时到达。
 - ModelClientLoggingTest：使用本机临时 HTTP 服务验证请求、响应日志及错误处理。
 
 打包后可运行：
@@ -129,7 +143,7 @@ mvn clean verify
 java -jar target/spring-agent-learning-0.0.1-SNAPSHOT.jar
 ```
 
-## 下一轮边界
+## 后续边界
 
-下一轮将拆分 ModelClient 内部的 Agent 编排、单次模型通信与上游流式解析职责。
+第二轮公共能力抽离已完成，普通业务和带工具业务的复用代码见上述改造说明。
 动态模型/画布管理、ASR、TTS、权限体系和 Spring Cloud 等能力继续按学习计划逐项接入。

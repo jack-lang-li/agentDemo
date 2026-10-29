@@ -7,7 +7,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum ContentItemType {
-    OUTPUT_TEXT("output_text");
+    OUTPUT_TEXT("output_text"),
+    REFUSAL("refusal");
 
     private final String value;
 }

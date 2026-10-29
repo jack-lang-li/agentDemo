@@ -5,8 +5,9 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.example.agent.config.ModelClientConfig;
 import com.example.agent.config.ModelProperties;
-import com.example.agent.tool.OrderTool;
-import com.example.agent.tool.ToolRegistry;
+import com.example.agent.client.responses.ResponsesModelClient;
+import com.example.agent.client.responses.ResponsesModelCodec;
+import com.example.agent.client.responses.ResponsesStreamReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -20,7 +21,6 @@ import org.springframework.web.client.RestClientResponseException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -58,8 +58,11 @@ class ModelClientLoggingTest {
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.setApiKey("secret-test-api-key");
         properties.setModel("test-model");
-        client = new ModelClient(properties, new ModelClientConfig().modelRestClient(RestClient.builder()),
-                new ObjectMapper(), new ToolRegistry(List.of(new OrderTool())));
+        ModelClientConfig config = new ModelClientConfig();
+        ObjectMapper mapper = new ObjectMapper();
+        ResponsesModelCodec codec = new ResponsesModelCodec(mapper);
+        client = new ResponsesModelClient(properties, config.modelRestClient(RestClient.builder(), properties),
+                config.modelStreamRestClient(properties), codec, new ResponsesStreamReader(mapper, codec));
     }
 
     @AfterEach
