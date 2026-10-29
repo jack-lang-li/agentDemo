@@ -1,35 +1,62 @@
 package com.example.agent;
 
+import com.example.agent.client.DifyWorkflowClient;
 import com.example.agent.client.ModelClient;
-import org.junit.jupiter.api.BeforeEach;
+import com.example.agent.exception.DifyCallException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
-import static org.mockito.Mockito.when;
+import java.nio.charset.StandardCharsets;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 加载完整 Spring 上下文，替换模型客户端，避免测试调用外部付费 API。
+ * 加载真实 Controller、Service、注册表和执行策略，只替换最外部的客户端。
+ *
+ * <p>这样既能发现 Spring 接口注入或策略注册错误，又不会调用真实模型、Dify 或付费 API。
+ * 测试覆盖两个已经与前端联调的接口，特别保护 SSE 的结束事件和 Dify 的 JSON 契约。</p>
  */
-@SpringBootTest(properties = "agent.model.api-key=test-key")
+@SpringBootTest(properties = {
+        "agent.model.api-key=test-key",
+        "agent.model.base-url=http://model.invalid",
+        "dify.api-key=test-dify-key",
+        "dify.base-url=http://dify.invalid/v1"
+})
 @AutoConfigureMockMvc
 class ChatIntegrationTest {
 
     @MockitoBean
     private ModelClient modelClient;
+
+    @MockitoBean
+    private DifyWorkflowClient difyWorkflowClient;
 
     private final MockMvc mockMvc;
 
@@ -38,53 +65,118 @@ class ChatIntegrationTest {
         this.mockMvc = mockMvc;
     }
 
-    @BeforeEach
-    void setUp() {
-        when(modelClient.chat("你好")).thenReturn("你好，我可以帮你查询订单。");
+    @Test
+    void shouldStreamLocalAgentAnswerAndOnlyThenSendDone() throws Exception {
+        doAnswer(invocation -> {
+            Consumer<String> onDelta = invocation.getArgument(1);
+            Consumer<String> onStatus = invocation.getArgument(2);
+            onStatus.accept("正在执行工具");
+            onDelta.accept("你好，");
+            onDelta.accept("我可以帮你查询订单。");
+            return null;
+        }).when(modelClient).chatStream(eq("你好"), any(), any());
+
+        MvcResult result = runStream("你好");
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache, no-transform"))
+                .andExpect(header().string("X-Accel-Buffering", "no"))
+                .andExpect(response -> assertThat(response.getResponse()
+                        .getContentAsString(StandardCharsets.UTF_8))
+                        .startsWith("event: status\ndata: {\"message\":\"请求已接收\"}\n\n")
+                        .contains("event: status\ndata: {\"message\":\"正在执行工具\"}\n\n",
+                                "event: delta\ndata: {\"text\":\"你好，\"}\n\n",
+                                "event: delta\ndata: {\"text\":\"我可以帮你查询订单。\"}\n\n")
+                        .endsWith("event: done\ndata: {}\n\n")
+                        .doesNotContain("event: error"));
+        verify(modelClient).chatStream(eq("你好"), any(), any());
+        verifyNoInteractions(difyWorkflowClient);
     }
 
     @Test
-    void shouldReturnModelAnswer() throws Exception {
-        mockMvc.perform(post("/api/chat")
+    void shouldKeepPartialTextAndSendErrorWithoutDoneWhenAgentFails() throws Exception {
+        doAnswer(invocation -> {
+            Consumer<String> onDelta = invocation.getArgument(1);
+            onDelta.accept("已经生成的部分正文");
+            throw new IllegalStateException("模拟模型执行失败");
+        }).when(modelClient).chatStream(eq("你好"), any(), any());
+
+        MvcResult result = runStream("你好");
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(response -> assertThat(response.getResponse()
+                        .getContentAsString(StandardCharsets.UTF_8))
+                        .contains("event: delta\ndata: {\"text\":\"已经生成的部分正文\"}\n\n")
+                        .endsWith("event: error\ndata: {\"message\":\"本次生成失败，请稍后重试\"}\n\n")
+                        .doesNotContain("event: done", "模拟模型执行失败"));
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @Test
+    void shouldReturnDifyJsonAnswerWithServerSideUserId() throws Exception {
+        when(difyWorkflowClient.run("现在北京时间几点？", "demo-user-1"))
+                .thenReturn("现在是北京时间 12:00。");
+
+        mockMvc.perform(post("/api/chat/dify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"message":"你好"}
+                                {"message":"现在北京时间几点？"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.answer").value("你好，我可以帮你查询订单。"));
-        verify(modelClient).chat("你好");
+                .andExpect(jsonPath("$.answer").value("现在是北京时间 12:00。"));
+        verify(difyWorkflowClient).run("现在北京时间几点？", "demo-user-1");
+        verifyNoInteractions(modelClient);
+    }
+
+    @Test
+    void shouldPreserveDifyBadGatewayErrorContract() throws Exception {
+        when(difyWorkflowClient.run("你好", "demo-user-1"))
+                .thenThrow(new DifyCallException("模拟工作流失败"));
+
+        mockMvc.perform(post("/api/chat/dify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"你好\"}"))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("智能体服务暂时不可用，请稍后重试"));
+        verifyNoInteractions(modelClient);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"{}", "{\"message\":null}", "{\"message\":\"\"}",
-            "{\"message\":\"   \"}"})
-    void shouldRejectMissingOrBlankMessage(String body) throws Exception {
-        mockMvc.perform(post("/api/chat")
+    @MethodSource("invalidRequests")
+    void shouldRejectMissingOrBlankMessageBeforeCallingExecutors(String path, String body) throws Exception {
+        mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("message 不能为空"));
-        verifyNoInteractions(modelClient);
+        verifyNoInteractions(modelClient, difyWorkflowClient);
     }
 
-    @Test
-    void shouldRejectMalformedJson() throws Exception {
-        mockMvc.perform(post("/api/chat")
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/chat/chat", "/api/chat/dify"})
+    void shouldRejectMalformedJson(String path) throws Exception {
+        mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("请求体必须是合法的 JSON 对象"));
-        verifyNoInteractions(modelClient);
+        verifyNoInteractions(modelClient, difyWorkflowClient);
     }
 
-    @Test
-    void shouldRejectMissingBody() throws Exception {
-        mockMvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON))
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/chat/chat", "/api/chat/dify"})
+    void shouldRejectMissingBody(String path) throws Exception {
+        mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("请求体必须是合法的 JSON 对象"));
-        verifyNoInteractions(modelClient);
+        verifyNoInteractions(modelClient, difyWorkflowClient);
     }
 
     @Test
@@ -92,5 +184,25 @@ class ChatIntegrationTest {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+        verifyNoInteractions(modelClient, difyWorkflowClient);
+    }
+
+    private MvcResult runStream(String message) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/chat/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"message\":\"" + message + "\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        // 等异步写入结束后再派发，避免在正文尚未写完时读取响应造成偶发失败。
+        result.getAsyncResult(5_000L);
+        return result;
+    }
+
+    private static Stream<Arguments> invalidRequests() {
+        return Stream.of("/api/chat/chat", "/api/chat/dify")
+                .flatMap(path -> Stream.of("{}", "{\"message\":null}", "{\"message\":\"\"}",
+                                "{\"message\":\"   \"}")
+                        .map(body -> Arguments.of(path, body)));
     }
 }

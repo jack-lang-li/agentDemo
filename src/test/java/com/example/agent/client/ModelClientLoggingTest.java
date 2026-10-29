@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.example.agent.config.ModelClientConfig;
 import com.example.agent.config.ModelProperties;
 import com.example.agent.tool.OrderTool;
+import com.example.agent.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -19,6 +20,7 @@ import org.springframework.web.client.RestClientResponseException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -56,8 +58,8 @@ class ModelClientLoggingTest {
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.setApiKey("secret-test-api-key");
         properties.setModel("test-model");
-/*        client = new ModelClient(properties, new ModelClientConfig().modelRestClient(RestClient.builder()),
-                new OrderTool(), new ObjectMapper());*/
+        client = new ModelClient(properties, new ModelClientConfig().modelRestClient(RestClient.builder()),
+                new ObjectMapper(), new ToolRegistry(List.of(new OrderTool())));
     }
 
     @AfterEach

@@ -2,6 +2,7 @@ package com.example.agent.client;
 
 import com.example.agent.config.ModelProperties;
 import com.example.agent.tool.OrderTool;
+import com.example.agent.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
@@ -18,15 +19,18 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseActions;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -49,12 +53,14 @@ class ModelClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        orderTool = mock(OrderTool.class);
+        // 使用真实工具定义与参数校验，只替换订单查询结果，适配当前 ToolRegistry 契约。
+        orderTool = spy(new OrderTool());
         ModelProperties properties = new ModelProperties();
         properties.setBaseUrl("http://model.test");
         properties.setApiKey("test-key");
         properties.setModel("test-model");
-//        client = new ModelClient(properties, builder.build(), orderTool, objectMapper);
+        client = new ModelClient(properties, builder.build(), objectMapper,
+                new ToolRegistry(List.of(orderTool)));
     }
 
     @AfterEach
@@ -79,13 +85,13 @@ class ModelClientTest {
                 .andRespond(withSuccess(answerResponse("请提供订单编号"), MediaType.APPLICATION_JSON));
 
         assertThat(client.chat("查询订单")).isEqualTo("请提供订单编号");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @Test
     void shouldKeepHistoryAndReturnToolResultsAcrossMultipleRounds() {
-//        when(orderTool.queryOrder("10001")).thenReturn("订单10001已发货");
-//        when(orderTool.queryOrder("10002")).thenReturn("未找到订单10002");
+        doReturn(Map.of("summary", "订单10001已发货")).when(orderTool).queryOrder("10001");
+        doReturn(Map.of("summary", "未找到订单10002")).when(orderTool).queryOrder("10002");
         ObjectNode firstResponse = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         firstResponse.withArray("output").insert(0,
                 objectMapper.createObjectNode().put("type", "reasoning").put("id", "reason-1"));
@@ -97,7 +103,7 @@ class ModelClientTest {
                 .andExpect(jsonPath("$.input[2].type").value("function_call"))
                 .andExpect(jsonPath("$.input[3].type").value("function_call_output"))
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
-                .andExpect(jsonPath("$.input[3].output").value("订单10001已发货"))
+                .andExpect(jsonPath("$.input[3].output").value("{\"summary\":\"订单10001已发货\"}"))
                 .andExpect(jsonPath("$.tool_choice").value("auto"))
                 .andRespond(withSuccess(toolResponse("call-2", "query_order", "{\"orderId\":\"10002\"}")
                         .toString(), MediaType.APPLICATION_JSON));
@@ -106,20 +112,20 @@ class ModelClientTest {
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
                 .andExpect(jsonPath("$.input[5].type").value("function_call_output"))
                 .andExpect(jsonPath("$.input[5].call_id").value("call-2"))
-                .andExpect(jsonPath("$.input[5].output").value("未找到订单10002"))
+                .andExpect(jsonPath("$.input[5].output").value("{\"summary\":\"未找到订单10002\"}"))
                 .andRespond(withSuccess(answerResponse("订单查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(client.chat("查询两个订单")).isEqualTo("订单查询完成");
         var ordered = inOrder(orderTool);
         ordered.verify(orderTool).queryOrder("10001");
         ordered.verify(orderTool).queryOrder("10002");
-        verifyNoMoreInteractions(orderTool);
+        verify(orderTool, times(2)).queryOrder(anyString());
     }
 
     @Test
     void shouldExecuteAllToolCallsInOneResponse() {
-//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
-//        when(orderTool.queryOrder("10002")).thenReturn("未找到订单");
+        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
+        doReturn(Map.of("summary", "未找到订单")).when(orderTool).queryOrder("10002");
         ObjectNode response = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         response.withArray("output").add(toolResponse("call-2", "query_order", "{\"orderId\":\"10002\"}")
                 .path("output").get(0));
@@ -127,15 +133,15 @@ class ModelClientTest {
         expectRequest()
                 .andExpect(jsonPath("$.input.length()").value(5))
                 .andExpect(jsonPath("$.input[3].call_id").value("call-1"))
-                .andExpect(jsonPath("$.input[3].output").value("已发货"))
+                .andExpect(jsonPath("$.input[3].output").value("{\"summary\":\"已发货\"}"))
                 .andExpect(jsonPath("$.input[4].call_id").value("call-2"))
-                .andExpect(jsonPath("$.input[4].output").value("未找到订单"))
+                .andExpect(jsonPath("$.input[4].output").value("{\"summary\":\"未找到订单\"}"))
                 .andRespond(withSuccess(answerResponse("查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(client.chat("查询两个订单")).isEqualTo("查询完成");
         verify(orderTool).queryOrder("10001");
         verify(orderTool).queryOrder("10002");
-        verifyNoMoreInteractions(orderTool);
+        verify(orderTool, times(2)).queryOrder(anyString());
     }
 
     @ParameterizedTest
@@ -148,7 +154,7 @@ class ModelClientTest {
 
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("模型响应未完成");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @ParameterizedTest
@@ -158,7 +164,7 @@ class ModelClientTest {
 
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("缺少有效的output数组");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @ParameterizedTest
@@ -168,7 +174,7 @@ class ModelClientTest {
 
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("未返回有效回答");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @Test
@@ -178,7 +184,7 @@ class ModelClientTest {
 
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不支持的工具");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @ParameterizedTest
@@ -190,7 +196,7 @@ class ModelClientTest {
 
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("缺少call_id");
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @ParameterizedTest
@@ -202,12 +208,12 @@ class ModelClientTest {
                 MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> client.chat("查询订单")).isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(orderTool);
+        verify(orderTool, never()).queryOrder(anyString());
     }
 
     @Test
     void shouldStopAtFiveRoundsWithoutExecutingLastRoundTools() {
-//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
+        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
         for (int round = 1; round <= 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
@@ -216,12 +222,12 @@ class ModelClientTest {
         assertThatThrownBy(() -> client.chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("达到模型调用轮数上限");
         verify(orderTool, times(4)).queryOrder("10001");
-        verifyNoMoreInteractions(orderTool);
+        verify(orderTool, times(4)).queryOrder(anyString());
     }
 
     @Test
     void shouldAcceptFinalAnswerOnFifthRound() {
-//        when(orderTool.queryOrder("10001")).thenReturn("已发货");
+        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
         for (int round = 1; round < 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
@@ -230,7 +236,7 @@ class ModelClientTest {
 
         assertThat(client.chat("查询订单")).isEqualTo("最终回答");
         verify(orderTool, times(4)).queryOrder("10001");
-        verifyNoMoreInteractions(orderTool);
+        verify(orderTool, times(4)).queryOrder(anyString());
     }
 
     private ResponseActions expectRequest() {

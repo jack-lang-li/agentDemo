@@ -3,7 +3,9 @@ package com.example.agent.controller;
 import com.example.agent.common.SseWriter;
 import com.example.agent.dto.ChatRequest;
 import com.example.agent.dto.ChatResponse;
+import com.example.agent.executor.ChatExecutorCodes;
 import com.example.agent.service.ChatService;
+import com.example.agent.service.model.ChatCommand;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,9 @@ public class ChatController {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
 
+    // 目前没有登录系统，沿用原有测试用户。后续从认证上下文获取，不能信任前端自报身份。
+    private static final String DEMO_USER_ID = "demo-user-1";
+
     private final ChatService chatService;
 
     private final ObjectMapper objectMapper;
@@ -42,6 +47,9 @@ public class ChatController {
     )
     public ResponseEntity<StreamingResponseBody> chat(
             @Valid @RequestBody ChatRequest request) {
+
+        // 当前由服务端入口固定选择执行方式，前端请求体仍然只需要 message。
+        ChatCommand command = new ChatCommand(request.getMessage(), DEMO_USER_ID);
 
         StreamingResponseBody body = outputStream -> {
 
@@ -55,7 +63,8 @@ public class ChatController {
                 );
 
                 chatService.chatStream(
-                        request.getMessage(),
+                        ChatExecutorCodes.LOCAL_AGENT,
+                        command,
 
                         text -> writer.send(
                                 "delta",
@@ -111,6 +120,9 @@ public class ChatController {
     public ChatResponse chatByDify(
             @Valid @RequestBody ChatRequest request) {
 
-        return chatService.chatByDify(request.getMessage());
+        return chatService.chat(
+                ChatExecutorCodes.DIFY_WORKFLOW,
+                new ChatCommand(request.getMessage(), DEMO_USER_ID)
+        );
     }
 }
