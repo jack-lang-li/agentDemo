@@ -1,0 +1,148 @@
+{
+  "total": 105,
+  "suites": [
+    {
+      "class": "com.example.agent.agent.AgentRunnerProtocolTest",
+      "tests": 25,
+      "methods": {
+        "shouldAcceptFinalAnswerOnFifthRound": 1,
+        "shouldContinueAfterArgumentErrorAndReturnAnswer": 1,
+        "shouldExecuteAllToolCallsInOneResponse": 1,
+        "shouldKeepHistoryAndReturnToolResultsAcrossMultipleRounds": 1,
+        "shouldRejectBlankFinalAnswer": 2,
+        "shouldRejectInvalidToolArgumentStructure": 4,
+        "shouldRejectMissingCallId": 3,
+        "shouldRejectResponseWithoutOutputArray": 3,
+        "shouldRejectUnfinishedResponseBeforeExecutingTools": 5,
+        "shouldRejectUnsupportedTool": 1,
+        "shouldSendProtocolValuesAndReturnAnswerWithoutCallingTools": 1,
+        "shouldStopAtFiveRoundsWithoutExecutingLastRoundTools": 1,
+        "shouldStopAtRoundLimitWhenModelRepeatsInvalidArguments": 1
+      }
+    },
+    {
+      "class": "com.example.agent.agent.DefaultAgentRunnerTest",
+      "tests": 7,
+      "methods": {
+        "shouldAllowAgentRequestWithoutAnyTools": 1,
+        "shouldContinueStreamingAfterArgumentErrorAndPreserveBothCallIds": 1,
+        "shouldKeepConcurrentBusinessToolsAndHistoriesIndependent": 1,
+        "shouldPropagateStreamCallbackFailureBeforeAnyToolExecution": 1,
+        "shouldRejectAnotherBusinessToolEvenAfterThatToolWasUsedByPreviousRequest": 1,
+        "shouldRespectPerBusinessRoundLimitWithoutExecutingLastRoundTools": 1,
+        "shouldUseSameLoopForStreamingToolCallsAndPreserveStatusOrder": 1
+      }
+    },
+    {
+      "class": "com.example.agent.ChatIntegrationTest",
+      "tests": 17,
+      "methods": {
+        "shouldExposeHealth": 1,
+        "shouldKeepPartialTextAndSendErrorWithoutDoneWhenAgentFails": 1,
+        "shouldPreserveDifyBadGatewayErrorContract": 1,
+        "shouldRejectMalformedJson": 2,
+        "shouldRejectMissingBody": 2,
+        "shouldRejectMissingOrBlankMessageBeforeCallingExecutors": 8,
+        "shouldReturnDifyJsonAnswerWithServerSideUserId": 1,
+        "shouldStreamLocalAgentAnswerAndOnlyThenSendDone": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ModelClientLoggingTest",
+      "tests": 3,
+      "methods": {
+        "shouldLogErrorBodyAndPreserveHttpError": 1,
+        "shouldLogRawBodiesWithoutConsumingResponseOrLoggingCredentials": 1,
+        "shouldLogRawBodyBeforeJsonParsingFails": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ModelClientWiringTest",
+      "tests": 1,
+      "methods": {
+        "shouldWireActualAdapterWithDistinctBlockingAndStreamingClients": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ModelStreamingTransportTest",
+      "tests": 1,
+      "methods": {
+        "shouldDeliverFirstDeltaBeforeServerSendsCompletedResponse": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ResponsesModelClientTest",
+      "tests": 7,
+      "methods": {
+        "shouldGenerateTextWithoutAdvertisingAnyBusinessTools": 1,
+        "shouldKeepBusinessInstructionsSeparateFromUserMessage": 1,
+        "shouldRejectFailedHttpStatusBeforeReadingStreamingEvents": 1,
+        "shouldRejectNonSseContentTypeForStreamingRequest": 1,
+        "shouldRejectToolProposalWhenCallerOnlyRequestsFinalText": 1,
+        "shouldReturnToolProposalAfterExactlyOneModelRequest": 1,
+        "shouldStreamRealDeltasAndReturnCompletedText": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ResponsesModelCodecTest",
+      "tests": 2,
+      "methods": {
+        "shouldJoinAllTextPartsAcrossMultipleMessages": 1,
+        "shouldPreserveRawReasoningAndUnknownFieldsWithoutSharingMutableHistory": 1
+      }
+    },
+    {
+      "class": "com.example.agent.client.ResponsesStreamReaderTest",
+      "tests": 12,
+      "methods": {
+        "shouldAcceptCompletedLastFrameWithoutTrailingBlankLine": 1,
+        "shouldFailForTerminalErrorAfterPartialOutput": 3,
+        "shouldHandleFragmentedUtf8CrLfMultilineDataAndHeartbeat": 1,
+        "shouldHandleRefusalTextInBothDeltaAndCompletedResponse": 1,
+        "shouldIgnoreReasoningAndPartialToolArgumentsUntilCompletedResult": 1,
+        "shouldPropagateCallbackFailureWithoutConsumingRemainingEvents": 1,
+        "shouldRejectCompletedEventWithoutValidFullResponse": 1,
+        "shouldRejectEofWithoutCompletedResponseEvenIfDoneMarkerWasPresent": 2,
+        "shouldRejectMalformedDeltaInsteadOfConvertingItToText": 1
+      }
+    },
+    {
+      "class": "com.example.agent.executor.ChatExecutorRegistryTest",
+      "tests": 7,
+      "methods": {
+        "shouldDistinguishStreamCapableExecutorsFromBlockingExecutors": 1,
+        "shouldFailExplicitlyForUnknownCodes": 1,
+        "shouldRejectAnEmptyRegistryAtStartup": 1,
+        "shouldRejectDuplicateCodesInsteadOfSilentlyReplacingAnExecutor": 1,
+        "shouldRejectInvalidCodesAtStartup": 3
+      }
+    },
+    {
+      "class": "com.example.agent.service.DefaultChatServiceTest",
+      "tests": 4,
+      "methods": {
+        "shouldForwardDeltaAndStatusCallbacksInOrder": 1,
+        "shouldPropagateCallbackFailureAndStopBeforeFurtherOutput": 1,
+        "shouldRejectBlockingOnlyStrategyWithoutExecutingOrFallingBack": 1,
+        "shouldSupportAnAdditionalStrategyWithoutAddingServiceBranches": 1
+      }
+    },
+    {
+      "class": "com.example.agent.tool.ToolCallExecutorTest",
+      "tests": 19,
+      "methods": {
+        "shouldAllowSameToolNameInIndependentBusinessRequests": 1,
+        "shouldKeepBatchResultOrderAndContinueAfterArgumentError": 1,
+        "shouldPropagateSerializationFailureInsteadOfReturningArgumentError": 1,
+        "shouldPropagateUnexpectedBusinessException": 1,
+        "shouldRejectDuplicateCallIdsBeforeExecutingTools": 1,
+        "shouldRejectDuplicateToolNamesWithinTheSameBusinessRequest": 1,
+        "shouldReturnLogisticsArgumentErrorWithoutQuerying": 5,
+        "shouldReturnOrderArgumentErrorWithoutQuerying": 5,
+        "shouldSerializeBusinessDtoAndListResults": 1,
+        "shouldTreatMissingBusinessDataAsSuccessfulExecution": 1,
+        "shouldValidateWholeBatchScopeBeforeExecutingFirstTool": 1
+      }
+    }
+  ]
+}

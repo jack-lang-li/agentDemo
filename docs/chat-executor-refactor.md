@@ -1,5 +1,7 @@
 # 第一轮改造：聊天业务接口与执行策略
 
+> 本文保留历史改造设计；代码已迁移至 Maven 多模块，旧包路径请参照[本轮迁移说明](multi-module-refactor.md)。
+
 本文保留第一轮的设计记录。第二轮已将 ModelClient 抽成单次调用接口，
 并将 Agent 循环与业务工具选择分开；当前复用方式见 [第二轮改造说明](model-capabilities-refactor.md)。
 

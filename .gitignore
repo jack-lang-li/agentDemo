@@ -1,8 +1,9 @@
-/target/
+target/
 /.idea/
 /.vscode/
 *.iml
 *.log
-/logs/
+logs/
 .DS_Store
 Thumbs.db
+__pycache__/

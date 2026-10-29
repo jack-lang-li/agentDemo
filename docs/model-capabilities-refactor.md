@@ -1,5 +1,7 @@
 # 第二轮改造：复用模型能力，由业务提供工具
 
+> 本文保留历史改造设计；代码已迁移至 Maven 多模块，旧包路径请参照[本轮迁移说明](multi-module-refactor.md)。
+
 本轮将原 ModelClient 中混在一起的模型通信、协议解析、Agent 循环和工具执行分开。
 普通业务可以直接注入 ModelClient；需要自动调用工具时，业务再向 AgentRunner 提交任务和工具。
 现有 `/api/chat/chat`、`/api/chat/dify`、请求 JSON 和前端 SSE 事件协议保持兼容。

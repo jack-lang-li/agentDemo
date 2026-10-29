@@ -1,0 +1,331 @@
+[
+  {
+    "source": "src/main/java/com/example/agent/agent/AgentRequest.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/AgentRequest.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/agent/AgentRunner.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/AgentRunner.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/agent/DefaultAgentRunner.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/DefaultAgentRunner.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/DifyWorkflowClient.java",
+    "target": "business-service/src/main/java/com/example/agent/business/integration/dify/DifyWorkflowClient.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ContentItemType.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/enums/ContentItemType.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/JsonSchemaType.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/enums/JsonSchemaType.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/MessageRole.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/enums/MessageRole.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/OutputItemType.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/enums/OutputItemType.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ResponseStatus.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/enums/ResponseStatus.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ShippingStatus.java",
+    "target": "business-service/src/main/java/com/example/agent/business/tool/enums/ShippingStatus.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ToolChoice.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/enums/ToolChoice.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ToolErrorCode.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/enums/ToolErrorCode.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ToolExecutionStatus.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/enums/ToolExecutionStatus.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ToolName.java",
+    "target": "business-service/src/main/java/com/example/agent/business/tool/enums/ToolName.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/enums/ToolType.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/enums/ToolType.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ContentItem.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/ContentItem.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelInput.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ModelInput.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelMessage.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/ModelMessage.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelRequest.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/ModelRequest.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelResponse.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/ModelResponse.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelResult.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ModelResult.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelTool.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ModelTool.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ModelTurn.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ModelTurn.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/OutputItem.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/protocol/OutputItem.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ToolCall.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ToolCall.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ToolExecutionError.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/model/ToolExecutionError.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ToolExecutionResult.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/model/ToolExecutionResult.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/model/ToolResult.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/model/ToolResult.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/ModelClient.java",
+    "target": "llm-api/src/main/java/com/example/agent/llm/api/ModelClient.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/ModelHttpLoggingInterceptor.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/ModelHttpLoggingInterceptor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/responses/ResponsesModelClient.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/ResponsesModelClient.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/responses/ResponsesModelCodec.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/ResponsesModelCodec.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/client/responses/ResponsesStreamReader.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/ResponsesStreamReader.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/common/SseWriter.java",
+    "target": "common-web/src/main/java/com/example/agent/common/web/sse/SseWriter.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/config/DifyProperties.java",
+    "target": "business-service/src/main/java/com/example/agent/business/integration/dify/DifyProperties.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/config/ModelClientConfig.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/config/ModelClientConfig.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/config/ModelProperties.java",
+    "target": "llm-provider-responses/src/main/java/com/example/agent/llm/provider/responses/config/ModelProperties.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/config/StreamMvcConfig.java",
+    "target": "business-service/src/main/java/com/example/agent/business/web/StreamMvcConfig.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/controller/ChatController.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/web/ChatController.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/dto/ChatRequest.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/dto/ChatRequest.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/dto/ChatResponse.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/dto/ChatResponse.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/exception/DifyCallException.java",
+    "target": "business-service/src/main/java/com/example/agent/business/integration/dify/DifyCallException.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/exception/GlobalExceptionHandler.java",
+    "target": "business-service/src/main/java/com/example/agent/business/web/GlobalExceptionHandler.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/exception/InvalidToolArgumentsException.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/exception/InvalidToolArgumentsException.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/ChatExecutor.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/ChatExecutor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/ChatExecutorCodes.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/ChatExecutorCodes.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/ChatExecutorRegistry.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/ChatExecutorRegistry.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/impl/DifyWorkflowExecutor.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/impl/DifyWorkflowExecutor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/impl/LocalAgentExecutor.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/impl/LocalAgentExecutor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/executor/StreamingChatExecutor.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/execution/StreamingChatExecutor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/service/ChatService.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/application/ChatService.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/service/impl/DefaultChatService.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/application/DefaultChatService.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/service/model/ChatCommand.java",
+    "target": "business-service/src/main/java/com/example/agent/business/chat/application/model/ChatCommand.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/SpringAgentLearningApplication.java",
+    "target": "business-service/src/main/java/com/example/agent/business/BusinessServiceApplication.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/tool/AgentTool.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/AgentTool.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/tool/LogisticsTool.java",
+    "target": "business-service/src/main/java/com/example/agent/business/logistics/tool/LogisticsTool.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/tool/OrderTool.java",
+    "target": "business-service/src/main/java/com/example/agent/business/order/tool/OrderTool.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/tool/ToolCallExecutor.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/ToolCallExecutor.java"
+  },
+  {
+    "source": "src/main/java/com/example/agent/tool/ToolRegistry.java",
+    "target": "agent-core/src/main/java/com/example/agent/agent/tool/ToolRegistry.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/ChatIntegrationTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/ChatIntegrationTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/agent/AgentRunnerProtocolTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/AgentRunnerProtocolTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/agent/DefaultAgentRunnerTest.java",
+    "target": "agent-core/src/test/java/com/example/agent/agent/DefaultAgentRunnerTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ModelClientLoggingTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ModelClientLoggingTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ModelClientWiringTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ModelClientWiringTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ModelStreamingTransportTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ModelStreamingTransportTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ResponsesModelClientTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ResponsesModelClientTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ResponsesModelCodecTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ResponsesModelCodecTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/client/ResponsesStreamReaderTest.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/llm/provider/responses/ResponsesStreamReaderTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/executor/ChatExecutorRegistryTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/ChatExecutorRegistryTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/service/DefaultChatServiceTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/DefaultChatServiceTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/tool/ToolCallExecutorTest.java",
+    "target": "agent-core/src/test/java/com/example/agent/agent/tool/ToolCallExecutorTest.java"
+  },
+  {
+    "source": "src/test/java/com/example/agent/agent/DefaultAgentRunnerTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/OrderToolAgentIntegrationTest.java",
+    "note": "Extracted the existing order-tool integration scenario; assertions unchanged."
+  },
+  {
+    "source": "src/test/java/com/example/agent/tool/ToolCallExecutorTest.java",
+    "target": "business-service/src/test/java/com/example/agent/business/BusinessToolCallExecutorTest.java",
+    "note": "Extracted five existing business-tool methods including parameterized cases; assertions unchanged."
+  },
+  {
+    "source": "src/test/java/com/example/agent/support/ModelFixtures.java",
+    "target": "agent-core/src/test/java/com/example/agent/testsupport/ModelFixtures.java",
+    "note": "Local test fixture; no production dependency."
+  },
+  {
+    "source": "src/test/java/com/example/agent/support/ModelFixtures.java",
+    "target": "business-service/src/test/java/com/example/agent/testsupport/ModelFixtures.java",
+    "note": "Local test fixture; no production dependency."
+  },
+  {
+    "source": "src/test/java/com/example/agent/support/ModelFixtures.java",
+    "target": "llm-provider-responses/src/test/java/com/example/agent/testsupport/ModelFixtures.java",
+    "note": "Local test fixture; no production dependency."
+  },
+  {
+    "source": "src/test/java/com/example/agent/support/RecordingTool.java",
+    "target": "agent-core/src/test/java/com/example/agent/testsupport/RecordingTool.java",
+    "note": "Local test fixture; no production dependency."
+  },
+  {
+    "source": "src/test/java/com/example/agent/support/RecordingTool.java",
+    "target": "business-service/src/test/java/com/example/agent/testsupport/RecordingTool.java",
+    "note": "Local test fixture; no production dependency."
+  },
+  {
+    "source": "src/main/resources/application.yml",
+    "target": "business-service/src/main/resources/application.yml",
+    "note": "Application-specific configuration; llm-service omits Dify."
+  },
+  {
+    "source": "src/main/resources/application.yml",
+    "target": "llm-service/src/main/resources/application.yml",
+    "note": "Application-specific configuration; llm-service omits Dify."
+  }
+]
