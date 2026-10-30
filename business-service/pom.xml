@@ -49,6 +49,22 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 业务命令使用公共调用者上下文。 -->
+        <dependency>
+            <groupId>com.example.agent</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+        <!-- 仅业务服务接入认证，不向公共模块引入安全框架。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <!-- 只有启动服务生成可执行 Spring Boot JAR。 -->
     <build>
@@ -83,6 +99,7 @@
                                         <include>com.example.agent:agent-core</include>
                                         <include>com.example.agent:common-web</include>
                                         <include>com.example.agent:llm-provider-responses</include>
+                                        <include>com.example.agent:common-core</include>
                                     </includes>
                                     <message>该模块只能依赖明确允许的内部契约或组件。</message>
                                 </bannedDependencies>

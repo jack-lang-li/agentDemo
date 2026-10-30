@@ -7,6 +7,8 @@ import com.example.agent.business.chat.execution.ChatExecutorRegistry;
 import com.example.agent.business.chat.execution.StreamingChatExecutor;
 import com.example.agent.business.chat.application.DefaultChatService;
 import com.example.agent.business.chat.application.model.ChatCommand;
+import com.example.agent.common.core.context.CallerContext;
+import com.example.agent.common.core.context.CallerType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +31,14 @@ import static org.mockito.Mockito.when;
 /** 验证业务入口可扩展性、回调顺序以及异常传播，不依赖具体平台客户端。 */
 class DefaultChatServiceTest {
 
-    private final ChatCommand command = new ChatCommand("你好", "user-42");
+    private final ChatCommand command = new ChatCommand(
+            "你好",
+            new CallerContext(
+                    "tenant-test",
+                    CallerType.USER,
+                    "user-42"
+            )
+    );
     private StreamingChatExecutor local;
     private ChatExecutor dify;
     private ChatService service;
@@ -54,7 +63,9 @@ class DefaultChatServiceTest {
 
             @Override
             public String execute(ChatCommand input) {
-                return input.userId() + " 收到：" + input.message();
+                return input.caller().callerId()
+                        + " 收到："
+                        + input.message();
             }
         };
         ChatService extended = new DefaultChatService(new ChatExecutorRegistry(List.of(local, dify, additional)));

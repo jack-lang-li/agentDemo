@@ -11,7 +11,12 @@
     </parent>
     <artifactId>common-core</artifactId>
     <dependencies>
-
+        <!-- 仅用于公共契约测试，不增加生产运行依赖。 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

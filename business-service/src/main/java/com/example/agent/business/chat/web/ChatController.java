@@ -1,5 +1,7 @@
 package com.example.agent.business.chat.web;
 
+import com.example.agent.business.identity.api.CurrentCallerProvider;
+import com.example.agent.common.core.context.CallerContext;
 import com.example.agent.common.web.sse.SseWriter;
 import com.example.agent.business.chat.dto.ChatRequest;
 import com.example.agent.business.chat.dto.ChatResponse;
@@ -34,12 +36,12 @@ public class ChatController {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
 
-    // 目前没有登录系统，沿用原有测试用户。后续从认证上下文获取，不能信任前端自报身份。
-    private static final String DEMO_USER_ID = "demo-user-1";
 
     private final ChatService chatService;
 
     private final ObjectMapper objectMapper;
+
+    private final CurrentCallerProvider currentCallerProvider;
 
     @PostMapping(
             value = "/chat",
@@ -48,8 +50,8 @@ public class ChatController {
     public ResponseEntity<StreamingResponseBody> chat(
             @Valid @RequestBody ChatRequest request) {
 
-        // 当前由服务端入口固定选择执行方式，前端请求体仍然只需要 message。
-        ChatCommand command = new ChatCommand(request.getMessage(), DEMO_USER_ID);
+        // 在入口创建命令，身份获取发生在异步回调之前。
+        ChatCommand command = createCommand(request);
 
         StreamingResponseBody body = outputStream -> {
 
@@ -120,9 +122,27 @@ public class ChatController {
     public ChatResponse chatByDify(
             @Valid @RequestBody ChatRequest request) {
 
+        ChatCommand command = createCommand(request);
+
         return chatService.chat(
                 ChatExecutorCodes.DIFY_WORKFLOW,
-                new ChatCommand(request.getMessage(), DEMO_USER_ID)
+                command
+        );
+    }
+
+    /**
+     * 统一创建聊天业务命令。
+     *
+     * 请求体只提供业务参数；
+     * 调用者上下文由服务端身份入口提供。
+     */
+    private ChatCommand createCommand(ChatRequest request) {
+        CallerContext caller =
+                currentCallerProvider.requireCurrentCaller();
+
+        return new ChatCommand(
+                request.getMessage(),
+                caller
         );
     }
 }

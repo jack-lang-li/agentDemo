@@ -28,6 +28,6 @@ public class DifyWorkflowExecutor implements ChatExecutor {
     @Override
     public String execute(ChatCommand command) {
         // 用户标识由上层显式传入，策略和客户端不再自行写死测试用户。
-        return difyWorkflowClient.run(command.message(), command.userId());
+        return difyWorkflowClient.run(command.message(), command.caller().callerId());
     }
 }

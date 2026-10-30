@@ -1,0 +1,5 @@
+app:
+  security:
+    dev:
+      alice-password: ${APP_DEV_ALICE_PASSWORD}
+      bob-password: ${APP_DEV_BOB_PASSWORD}

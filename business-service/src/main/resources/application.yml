@@ -1,6 +1,21 @@
 server:
   port: 8080
 
+  servlet:
+    session:
+      # 空闲超时，不是从登录开始计算的绝对有效期。
+      timeout: 30m
+
+      tracking-modes: cookie
+
+      cookie:
+        http-only: true
+        same-site: lax
+
+        # 本地 HTTP 为 false。
+        # 后续 HTTPS 部署环境应设置为 true。
+        secure: ${SESSION_COOKIE_SECURE:false}
+
 spring:
   application:
     name: business-service

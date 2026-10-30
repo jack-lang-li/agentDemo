@@ -15,6 +15,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithUserDetails;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -31,6 +34,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,9 +54,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "agent.model.api-key=test-key",
         "agent.model.base-url=http://model.invalid",
         "dify.api-key=test-dify-key",
-        "dify.base-url=http://dify.invalid/v1"
+        "dify.base-url=http://dify.invalid/v1",
+        "app.security.dev.alice-password=Alice-test-123",
+        "app.security.dev.bob-password=Bob-test-123"
 })
 @AutoConfigureMockMvc
+@ActiveProfiles("dev")
+// 使用真实账号加载器创建系统约定的主体，不 Mock CurrentCallerProvider。
+// 密码校验与 Session 生命周期另由 AuthenticationIntegrationTest 覆盖。
+@WithUserDetails(value = "alice", userDetailsServiceBeanName = "devUserDetailsService")
 class ChatIntegrationTest {
 
     @MockitoBean
@@ -125,6 +135,7 @@ class ChatIntegrationTest {
                 .thenReturn("现在是北京时间 12:00。");
 
         mockMvc.perform(post("/api/chat/dify")
+                        .with(csrf().asHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"message":"现在北京时间几点？"}
@@ -142,6 +153,7 @@ class ChatIntegrationTest {
                 .thenThrow(new DifyCallException("模拟工作流失败"));
 
         mockMvc.perform(post("/api/chat/dify")
+                        .with(csrf().asHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"你好\"}"))
                 .andExpect(status().isBadGateway())
@@ -154,6 +166,7 @@ class ChatIntegrationTest {
     @MethodSource("invalidRequests")
     void shouldRejectMissingOrBlankMessageBeforeCallingExecutors(String path, String body) throws Exception {
         mockMvc.perform(post(path)
+                        .with(csrf().asHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -166,6 +179,7 @@ class ChatIntegrationTest {
     @ValueSource(strings = {"/api/chat/chat", "/api/chat/dify"})
     void shouldRejectMalformedJson(String path) throws Exception {
         mockMvc.perform(post(path)
+                        .with(csrf().asHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":"))
                 .andExpect(status().isBadRequest())
@@ -176,13 +190,16 @@ class ChatIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"/api/chat/chat", "/api/chat/dify"})
     void shouldRejectMissingBody(String path) throws Exception {
-        mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON))
+        mockMvc.perform(post(path)
+                        .with(csrf().asHeader())
+                        .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("请求体必须是合法的 JSON 对象"));
         verifyNoInteractions(modelClient, difyWorkflowClient);
     }
 
     @Test
+    @WithAnonymousUser
     void shouldExposeHealth() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
@@ -192,6 +209,7 @@ class ChatIntegrationTest {
 
     private MvcResult runStream(String message) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/chat/chat")
+                        .with(csrf().asHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.TEXT_EVENT_STREAM)
                         .content("{\"message\":\"" + message + "\"}"))
