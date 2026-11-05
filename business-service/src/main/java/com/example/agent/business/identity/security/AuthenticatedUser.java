@@ -4,6 +4,7 @@ import com.example.agent.common.core.context.CallerContext;
 import com.example.agent.common.core.context.CallerType;
 import org.springframework.security.core.CredentialsContainer;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.io.Serial;
@@ -28,6 +29,13 @@ public final class AuthenticatedUser
     private final String userId;
     private final String username;
 
+    /**
+     * 本次登录的权限快照。
+     *
+     * 集合不可变，避免会话中的权限被普通业务代码修改。
+     */
+    private final List<GrantedAuthority> authorities;
+
     /** 仅在密码校验期间需要，认证成功后由框架清理。 */
     private String password;
 
@@ -35,7 +43,8 @@ public final class AuthenticatedUser
             String tenantId,
             String userId,
             String username,
-            String passwordHash) {
+            String passwordHash,
+            Collection<String> permissionCodes) {
 
         // 复用内部身份完整性校验。
         CallerContext checked = new CallerContext(
@@ -55,6 +64,27 @@ public final class AuthenticatedUser
         this.userId = checked.callerId();
         this.username = username;
         this.password = passwordHash;
+        // 将业务权限码转换为 Spring Security 的权限对象。
+        // distinct 去重；Java 17 的 toList 返回不可修改的集合。
+        this.authorities = permissionCodes.stream()
+                .map(AuthenticatedUser::toAuthority)
+                .distinct()
+                .toList();
+    }
+
+    private static GrantedAuthority toAuthority(
+            String permissionCode) {
+
+        if (permissionCode == null
+                || permissionCode.isBlank()
+                || !permissionCode.equals(permissionCode.strip())) {
+
+            throw new IllegalArgumentException(
+                    "permissionCode 不能为空或包含首尾空白"
+            );
+        }
+
+        return new SimpleGrantedAuthority(permissionCode);
     }
 
     public CallerContext callerContext() {
@@ -77,8 +107,7 @@ public final class AuthenticatedUser
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // 本节只判断是否登录，具体权限下一节加入。
-        return List.of();
+        return authorities;
     }
 
     @Override

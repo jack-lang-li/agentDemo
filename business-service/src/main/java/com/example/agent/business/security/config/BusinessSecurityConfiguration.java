@@ -1,5 +1,6 @@
 package com.example.agent.business.security.config;
 
+import com.example.agent.business.security.permission.BusinessPermissions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,9 +25,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 业务服务的 HTTP 认证边界。
+ * 业务服务的 HTTP 认证与接口授权边界。
  *
- * 本节只要求登录，不引入具体角色或业务权限。
+ * 认证确认当前用户身份。
+ * 授权根据用户持有的权限码检查接口访问资格。
  */
 @Configuration(proxyBeanMethods = false)
 public class BusinessSecurityConfiguration {
@@ -107,11 +109,21 @@ public class BusinessSecurityConfiguration {
                                 "/actuator/info"
                         ).authenticated()
 
-                        .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/chat/chat",
-                                "/api/chat/dify"
-                        ).authenticated()
+                                // Agent 聊天入口：要求持有 Agent 调用权限。
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/chat/chat"
+                                ).hasAuthority(
+                                        BusinessPermissions.CHAT_AGENT_INVOKE
+                                )
+
+// 工作流聊天入口：要求持有工作流调用权限。
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/chat/dify"
+                                ).hasAuthority(
+                                        BusinessPermissions.CHAT_WORKFLOW_INVOKE
+                                )
 
                         // 新接口必须显式登记。
                         .anyRequest().denyAll()

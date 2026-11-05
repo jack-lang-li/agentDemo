@@ -1,6 +1,7 @@
 package com.example.agent.business.identity.adapter.dev;
 
 import com.example.agent.business.identity.security.AuthenticatedUser;
+import com.example.agent.business.security.permission.BusinessPermissions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 开发账号数据源。
@@ -36,12 +38,21 @@ public class DevAccountConfiguration {
                 "alice", new Account(
                         "demo-tenant-1",
                         "demo-user-1",
-                        passwordEncoder.encode(alicePassword)
+                        passwordEncoder.encode(alicePassword),
+                        // alice 可以使用两个聊天入口。
+                        Set.of(
+                                BusinessPermissions.CHAT_AGENT_INVOKE,
+                                BusinessPermissions.CHAT_WORKFLOW_INVOKE
+                        )
                 ),
                 "bob", new Account(
                         "demo-tenant-1",
                         "demo-user-2",
-                        passwordEncoder.encode(bobPassword)
+                        passwordEncoder.encode(bobPassword),
+                        // bob 只可以使用工作流聊天入口。
+                        Set.of(
+                                BusinessPermissions.CHAT_WORKFLOW_INVOKE
+                        )
                 )
         );
 
@@ -58,7 +69,8 @@ public class DevAccountConfiguration {
                     account.tenantId(),
                     account.userId(),
                     username,
-                    account.passwordHash()
+                    account.passwordHash(),
+                    account.permissionCodes()
             );
         };
     }
@@ -74,6 +86,7 @@ public class DevAccountConfiguration {
     private record Account(
             String tenantId,
             String userId,
-            String passwordHash) {
+            String passwordHash,
+            Set<String> permissionCodes) {
     }
 }
