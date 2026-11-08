@@ -59,7 +59,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.security.dev.bob-password=Bob-test-123"
 })
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles({"dev", "dev-memory", "no-db-test"})
 // 使用真实账号加载器创建系统约定的主体，不 Mock CurrentCallerProvider。
 // 密码校验与 Session 生命周期另由 AuthenticationIntegrationTest 覆盖。
 @WithUserDetails(value = "alice", userDetailsServiceBeanName = "devUserDetailsService")

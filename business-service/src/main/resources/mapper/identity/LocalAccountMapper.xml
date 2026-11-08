@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.agent.business.identity.adapter.persistence.mapper.LocalAccountMapper">
+
+    <resultMap id="loginAccount"
+               type="com.example.agent.business.identity.adapter.persistence.model.LocalAccountRow">
+        <id property="userId" column="user_id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="username" column="username"/>
+        <result property="passwordHash" column="password_hash"/>
+        <result property="userEnabled" column="user_enabled"/>
+        <result property="accountEnabled" column="account_enabled"/>
+    </resultMap>
+
+    <!--
+        读取账号时保留启停状态，
+        由认证框架根据 UserDetails.isEnabled() 拒绝停用账号。
+    -->
+    <select id="findLoginAccount"
+            resultMap="loginAccount"
+            useCache="false">
+        SELECT
+        u.user_id,
+        u.tenant_id,
+        a.username,
+        a.password_hash,
+        u.enabled AS user_enabled,
+        a.enabled AS account_enabled
+        FROM iam_local_account a
+        INNER JOIN iam_user u
+        ON u.tenant_id = a.tenant_id
+        AND u.user_id = a.user_id
+        WHERE a.tenant_id = #{tenantId}
+        AND a.username = #{username}
+    </select>
+
+    <!--
+        每一层租户内关联都包含 tenant_id。
+        DISTINCT 合并多个角色重复授予的权限。
+    -->
+    <select id="findPermissionCodes"
+            resultType="java.lang.String"
+            useCache="false">
+        SELECT DISTINCT p.permission_code
+        FROM iam_user_role ur
+        INNER JOIN iam_role r
+        ON r.tenant_id = ur.tenant_id
+        AND r.role_id = ur.role_id
+        AND r.enabled = 1
+        INNER JOIN iam_role_permission rp
+        ON rp.tenant_id = r.tenant_id
+        AND rp.role_id = r.role_id
+        INNER JOIN iam_permission p
+        ON p.permission_code = rp.permission_code
+        WHERE ur.tenant_id = #{tenantId}
+        AND ur.user_id = #{userId}
+        ORDER BY p.permission_code
+    </select>
+
+</mapper>

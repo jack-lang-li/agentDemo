@@ -27,18 +27,12 @@ class AuthenticatedUserTest {
     void shouldPreserveIdentityAfterCredentialErasureAndSerialization() throws Exception {
         AuthenticatedUser user = new AuthenticatedUser(
                 "tenant-1", "user-42", "alice", "test-hash",
-                List.of(BusinessPermissions.CHAT_AGENT_INVOKE, BusinessPermissions.CHAT_WORKFLOW_INVOKE));
+                List.of(BusinessPermissions.CHAT_AGENT_INVOKE, BusinessPermissions.CHAT_WORKFLOW_INVOKE), true);
         user.eraseCredentials();
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
-            output.writeObject(user);
-        }
-        AuthenticatedUser restored;
-        try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
-            restored = (AuthenticatedUser) input.readObject();
-        }
+        AuthenticatedUser restored = roundTrip(user);
 
         assertThat(restored.getPassword()).isNull();
+        assertThat(restored.isEnabled()).isTrue();
         assertThat(restored.getUsername()).isEqualTo("alice");
         assertThat(restored.callerContext())
                 .isEqualTo(new CallerContext("tenant-1", CallerType.USER, "user-42"));
@@ -54,7 +48,7 @@ class AuthenticatedUserTest {
                 BusinessPermissions.CHAT_WORKFLOW_INVOKE,
                 BusinessPermissions.CHAT_WORKFLOW_INVOKE));
         AuthenticatedUser user = new AuthenticatedUser(
-                "tenant-1", "user-42", "alice", "test-hash", source);
+                "tenant-1", "user-42", "alice", "test-hash", source, true);
 
         // 创建主体后修改原集合，不能撤掉已有权限或给会话追加权限。
         source.clear();
@@ -69,7 +63,7 @@ class AuthenticatedUserTest {
     @Test
     void shouldAllowIdentityWithoutBusinessPermissions() {
         AuthenticatedUser user = new AuthenticatedUser(
-                "tenant-1", "user-42", "alice", "test-hash", List.of());
+                "tenant-1", "user-42", "alice", "test-hash", List.of(), true);
 
         assertThat(user.getAuthorities()).isEmpty();
         assertThat(user.callerContext())
@@ -79,7 +73,7 @@ class AuthenticatedUserTest {
     @Test
     void shouldRejectNullPermissionCollectionExplicitly() {
         assertThatThrownBy(() -> new AuthenticatedUser(
-                "tenant-1", "user-42", "alice", "test-hash", null))
+                "tenant-1", "user-42", "alice", "test-hash", null, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("permissionCodes 不能为 null");
     }
@@ -94,7 +88,34 @@ class AuthenticatedUserTest {
         // singletonList 允许 null，确保校验发生在主体构造中。
         assertThatThrownBy(() -> new AuthenticatedUser(
                 "tenant-1", "user-42", "alice", "test-hash",
-                Collections.singletonList(permissionCode)))
+                Collections.singletonList(permissionCode), true))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void shouldKeepDisabledStateAfterCredentialErasureAndSerialization() throws Exception {
+        AuthenticatedUser user = new AuthenticatedUser(
+                "tenant-1", "user-42", "alice", "test-hash",
+                List.of(BusinessPermissions.CHAT_WORKFLOW_INVOKE), false);
+        user.eraseCredentials();
+
+        AuthenticatedUser restored = roundTrip(user);
+
+        assertThat(restored.isEnabled()).isFalse();
+        assertThat(restored.getPassword()).isNull();
+        assertThat(restored.callerContext())
+                .isEqualTo(new CallerContext("tenant-1", CallerType.USER, "user-42"));
+        assertThat(restored.getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactly("chat:workflow:invoke");
+    }
+
+    private static AuthenticatedUser roundTrip(AuthenticatedUser user) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+            output.writeObject(user);
+        }
+        try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+            return (AuthenticatedUser) input.readObject();
+        }
     }
 }

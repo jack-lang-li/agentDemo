@@ -57,7 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.security.dev.bob-password=Bob-test-123",
         "logging.file.name=target/test-logs/authentication.log"
 })
-@ActiveProfiles("dev")
+@ActiveProfiles({"dev", "dev-memory", "no-db-test"})
 @AutoConfigureMockMvc
 class AuthenticationIntegrationTest {
 

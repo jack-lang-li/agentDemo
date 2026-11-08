@@ -14,13 +14,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 开发账号数据源。
+ * 可选的内存开发账号数据源。
  *
- * 账号暂时存放内存，但认证流程是真实的。
- * 后续通过数据库版 UserDetailsService 替换此配置。
+ * 仅在 dev 和 dev-memory 同时激活时生效，
+ * 用于本地演示及自动化回归测试。
+ * 正常数据库模式使用 DatabaseUserDetailsService。
  */
 @Configuration(proxyBeanMethods = false)
-@Profile("dev")
+@Profile("dev & dev-memory")
 public class DevAccountConfiguration {
 
     @Bean
@@ -70,7 +71,8 @@ public class DevAccountConfiguration {
                     account.userId(),
                     username,
                     account.passwordHash(),
-                    account.permissionCodes()
+                    account.permissionCodes(),
+                    true
             );
         };
     }

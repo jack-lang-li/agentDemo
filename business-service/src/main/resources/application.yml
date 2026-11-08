@@ -16,6 +16,11 @@ server:
         # 后续 HTTPS 部署环境应设置为 true。
         secure: ${SESSION_COOKIE_SECURE:false}
 
+app:
+  security:
+    # 独立部署阶段由服务端确定当前客户或租户。
+    tenant-id: ${APP_TENANT_ID}
+
 spring:
   application:
     name: business-service
@@ -40,8 +45,8 @@ spring:
     clean-disabled: true
 
 mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
-    # user_id 等数据库列映射为 userId 等 Java 属性。
     map-underscore-to-camel-case: true
 
 logging:

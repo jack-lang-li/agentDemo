@@ -28,6 +28,8 @@ public final class AuthenticatedUser
     private final String tenantId;
     private final String userId;
     private final String username;
+    /** 本次登录读取到的账号启停状态。 */
+    private final boolean enabled;
 
     /**
      * 本次登录的权限快照。
@@ -44,7 +46,8 @@ public final class AuthenticatedUser
             String userId,
             String username,
             String passwordHash,
-            Collection<String> permissionCodes) {
+            Collection<String> permissionCodes,
+            boolean enabled) {
 
         // 复用内部身份完整性校验。
         CallerContext checked = new CallerContext(
@@ -70,6 +73,7 @@ public final class AuthenticatedUser
         this.userId = checked.callerId();
         this.username = username;
         this.password = passwordHash;
+        this.enabled = enabled;
         // 将业务权限码转换为 Spring Security 的权限对象。
         // distinct 去重；Java 17 的 toList 返回不可修改的集合。
         this.authorities = permissionCodes.stream()
@@ -114,6 +118,11 @@ public final class AuthenticatedUser
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled;
     }
 
     @Override

@@ -60,7 +60,7 @@ class SecurityContextCurrentCallerProviderTest {
     @Test
     void shouldUseInternalIdentityInsteadOfLoginName() {
         AuthenticatedUser principal = new AuthenticatedUser(
-                "tenant-1", "internal-user-42", "alice", "test-hash", List.of());
+                "tenant-1", "internal-user-42", "alice", "test-hash", List.of(), true);
         principal.eraseCredentials();
         SecurityContextHolder.getContext().setAuthentication(
                 UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of()));

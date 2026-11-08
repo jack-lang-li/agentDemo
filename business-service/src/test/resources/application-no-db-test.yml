@@ -1,0 +1,8 @@
+# 原有认证和聊天回归使用开发账号，并模拟外部模型客户端。
+# 本配置仅存在于测试资源中，避免它们读取或修改本地开发数据库。
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  flyway:
+    enabled: false

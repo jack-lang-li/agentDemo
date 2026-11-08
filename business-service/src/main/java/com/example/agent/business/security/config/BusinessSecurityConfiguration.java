@@ -10,6 +10,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -142,14 +143,26 @@ public class BusinessSecurityConfiguration {
                                 )
                         )
 
-                        .failureHandler((request, response, exception) ->
+                        .failureHandler((request, response, exception) -> {
+                            // 数据库读取等认证服务异常，不能误报成用户密码错误。
+                            if (exception instanceof AuthenticationServiceException) {
                                 writeProblem(
                                         response,
-                                        401,
-                                        "LOGIN_FAILED",
-                                        "用户名或密码错误"
-                                )
-                        )
+                                        503,
+                                        "AUTH_SERVICE_UNAVAILABLE",
+                                        "登录服务暂时不可用，请稍后重试"
+                                );
+                                return;
+                            }
+
+                            // 错误密码、未知账号和停用账号统一返回登录失败。
+                            writeProblem(
+                                    response,
+                                    401,
+                                    "LOGIN_FAILED",
+                                    "用户名或密码错误"
+                            );
+                        })
                 )
 
                 .logout(logout -> logout

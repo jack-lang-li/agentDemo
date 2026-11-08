@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "app.security.dev.bob-password=Bob-test-123",
         "server.servlet.session.cookie.secure=false"
 })
-@ActiveProfiles("dev")
+@ActiveProfiles({"dev", "dev-memory", "no-db-test"})
 class BusinessServiceWiringTest {
 
     @Autowired
