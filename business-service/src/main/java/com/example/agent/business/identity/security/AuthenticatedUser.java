@@ -59,6 +59,12 @@ public final class AuthenticatedUser
         if (passwordHash == null || passwordHash.isBlank()) {
             throw new IllegalArgumentException("passwordHash 不能为空");
         }
+        // 校验集合本身；集合中的每个权限码由 toAuthority 校验。
+        if (permissionCodes == null) {
+            throw new IllegalArgumentException(
+                    "permissionCodes 不能为 null"
+            );
+        }
 
         this.tenantId = checked.tenantId();
         this.userId = checked.callerId();

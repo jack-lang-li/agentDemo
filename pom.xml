@@ -29,6 +29,7 @@
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <mybatis-plus.version>3.5.18</mybatis-plus.version>
     </properties>
     <!-- 只管理版本，各模块按实际使用显式声明依赖。 -->
     <dependencyManagement>
@@ -72,6 +73,12 @@
                 <groupId>com.example.agent</groupId>
                 <artifactId>business-service</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <!-- 统一管理版本，实际依赖由需要的业务模块声明。 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

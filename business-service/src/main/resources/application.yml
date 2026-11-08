@@ -19,6 +19,30 @@ server:
 spring:
   application:
     name: business-service
+  sql:
+    init:
+      # 表结构统一由 Flyway 管理。
+      mode: never
+
+  flyway:
+    enabled: true
+
+    # 本阶段使用 MySQL 专用迁移目录。
+    locations: classpath:db/migration/mysql
+
+    # 启动时检查已执行迁移与当前文件是否一致。
+    validate-on-migrate: true
+
+    # 使用新的开发库，不自动接管已有的非空数据库。
+    baseline-on-migrate: false
+
+    # 禁用 Flyway 清库操作。
+    clean-disabled: true
+
+mybatis-plus:
+  configuration:
+    # user_id 等数据库列映射为 userId 等 Java 属性。
+    map-underscore-to-camel-case: true
 
 logging:
   level:

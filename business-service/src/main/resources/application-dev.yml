@@ -3,3 +3,12 @@ app:
     dev:
       alice-password: ${APP_DEV_ALICE_PASSWORD}
       bob-password: ${APP_DEV_BOB_PASSWORD}
+
+
+spring:
+  datasource:
+    # 连接地址、账号、密码由运行环境提供。
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver

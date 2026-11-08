@@ -76,6 +76,14 @@ class AuthenticatedUserTest {
                 .isEqualTo(new CallerContext("tenant-1", CallerType.USER, "user-42"));
     }
 
+    @Test
+    void shouldRejectNullPermissionCollectionExplicitly() {
+        assertThatThrownBy(() -> new AuthenticatedUser(
+                "tenant-1", "user-42", "alice", "test-hash", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("permissionCodes 不能为 null");
+    }
+
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {
