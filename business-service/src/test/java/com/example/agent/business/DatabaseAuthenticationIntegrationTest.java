@@ -9,6 +9,8 @@ import com.example.agent.business.chat.application.model.ChatCommand;
 import com.example.agent.business.chat.execution.ChatExecutorCodes;
 import com.example.agent.business.integration.dify.DifyWorkflowClient;
 import com.example.agent.business.logistics.tool.LogisticsTool;
+import com.example.agent.business.order.adapter.persistence.mapper.OrderQueryMapper;
+import com.example.agent.business.logistics.adapter.persistence.mapper.LogisticsQueryMapper;
 import com.example.agent.business.order.tool.OrderTool;
 import com.example.agent.llm.api.ModelClient;
 import com.example.agent.llm.api.model.ModelInput;
@@ -16,6 +18,7 @@ import com.example.agent.llm.api.model.ModelResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -46,6 +49,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -56,11 +61,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.example.agent.testsupport.ModelFixtures.answer;
+import static com.example.agent.testsupport.BusinessDataFixtures.orderRow;
+import static com.example.agent.testsupport.BusinessDataFixtures.logisticsRow;
 import static com.example.agent.testsupport.ModelFixtures.proposal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -110,10 +118,13 @@ class DatabaseAuthenticationIntegrationTest {
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private ApplicationContext context;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private ThreadPoolTaskExecutor chatStreamExecutor;
 
     @MockitoBean private LocalAccountMapper accountMapper;
     @MockitoBean private ModelClient modelClient;
     @MockitoBean private DifyWorkflowClient difyWorkflowClient;
+    @MockitoBean private OrderQueryMapper orderMapper;
+    @MockitoBean private LogisticsQueryMapper logisticsMapper;
     @MockitoSpyBean private OrderTool orderTool;
     @MockitoSpyBean private LogisticsTool logisticsTool;
     @MockitoSpyBean private ChatService chatService;
@@ -122,9 +133,29 @@ class DatabaseAuthenticationIntegrationTest {
     private List<String> alicePermissions;
     private List<String> bobPermissions;
     private int aliceEnabled;
+    private final ThreadLocal<CountDownLatch> initialDispatch = new ThreadLocal<>();
 
     @BeforeEach
     void setUpStorage() {
+        // MockHttpServletResponse 的响应头容器不支持并发写入。
+        // 仅控制测试调度：初始安全过滤器退出后再执行流式任务，仍使用真实线程池。
+        chatStreamExecutor.setTaskDecorator(task -> {
+            CountDownLatch gate = initialDispatch.get();
+            if (gate == null) {
+                return task;
+            }
+            return () -> {
+                try {
+                    if (!gate.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("MockMvc 初始派发未完成");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("等待初始派发时被中断", exception);
+                }
+                task.run();
+            };
+        });
         String storedHash = passwordEncoder.encode(PASSWORD);
         aliceHash = storedHash;
         aliceEnabled = 1;
@@ -155,7 +186,21 @@ class DatabaseAuthenticationIntegrationTest {
                 default -> List.of();
             };
         });
-        clearInvocations(transactionManager);
+        when(orderMapper.findOwnedOrder(TENANT, ALICE_ID, "10001"))
+                .thenReturn(orderRow("10001", "SF_TEST_10001"));
+        when(orderMapper.findOwnedOrder(TENANT, "db-user-bob", "10002"))
+                .thenReturn(orderRow("10002", "SF_TEST_10002"));
+        when(logisticsMapper.findOwnedLogistics(TENANT, ALICE_ID, "SF_TEST_10001"))
+                .thenReturn(logisticsRow("SF_TEST_10001", "南宁转运中心"));
+        when(logisticsMapper.findOwnedLogistics(TENANT, "db-user-bob", "SF_TEST_10002"))
+                .thenReturn(logisticsRow("SF_TEST_10002", "广州转运中心"));
+        clearInvocations(transactionManager, orderMapper, logisticsMapper);
+    }
+
+    @AfterEach
+    void restoreStreamScheduling() {
+        chatStreamExecutor.setTaskDecorator(null);
+        initialDispatch.remove();
     }
 
     @Test
@@ -216,11 +261,10 @@ class DatabaseAuthenticationIntegrationTest {
             return new ModelResult("数据库账号回答", List.of(), List.of());
         }).when(modelClient).generateStream(any(ModelInput.class), any());
 
-        MvcResult stream = mvc.perform(post("/api/chat/chat").session(alice.session())
+        MvcResult stream = performStream(post("/api/chat/chat").session(alice.session())
                         .header(alice.headerName(), alice.token())
                         .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
-                        .content("{\"message\":\"你好\"}"))
-                .andExpect(request().asyncStarted()).andReturn();
+                        .content("{\"message\":\"你好\"}"));
         stream.getAsyncResult(5_000L);
         mvc.perform(asyncDispatch(stream))
                 .andExpect(status().isOk())
@@ -379,7 +423,7 @@ class DatabaseAuthenticationIntegrationTest {
                     "{\"orderId\":\"10001\",\"trackingNo\":\"SF_TEST_10001\"}");
         }).when(modelClient).generateStream(any(ModelInput.class), any());
 
-        MvcResult stream = mvc.perform(post("/api/chat/chat").session(alice.session())
+        MvcResult stream = performStream(post("/api/chat/chat").session(alice.session())
                         .header(alice.headerName(), alice.token())
                         .header("X-Permissions", "chat:agent:invoke,order:query,logistics:query")
                         .header("X-User-Id", "forged-user")
@@ -389,14 +433,13 @@ class DatabaseAuthenticationIntegrationTest {
                                 {"message":"越权调用","userId":"forged-user",
                                  "permissionCodes":["order:query","logistics:query"],
                                  "authorization":{"permissionCodes":["order:query","logistics:query"]}}
-                                """))
-                .andExpect(request().asyncStarted()).andReturn();
+                                """));
 
         assertThat(finishStream(stream, false))
                 .doesNotContain("forbidden-call", "forged-user", "SF_TEST_10001", "不支持的工具");
         verify(modelClient).generateStream(any(ModelInput.class), any());
-        verify(orderTool, never()).execute(any());
-        verify(logisticsTool, never()).execute(any());
+        verify(orderTool, never()).execute(any(), any());
+        verify(logisticsTool, never()).execute(any(), any());
         verifyNoBusinessQueries();
         expectIdentity(alice.session(), ALICE_ID);
         verifyNoInteractions(difyWorkflowClient);
@@ -415,8 +458,8 @@ class DatabaseAuthenticationIntegrationTest {
 
         finishStream(startStream(alice, "同一轮包含两个工具"), false);
 
-        verify(orderTool, never()).execute(any());
-        verify(logisticsTool, never()).execute(any());
+        verify(orderTool, never()).execute(any(), any());
+        verify(logisticsTool, never()).execute(any(), any());
         verifyNoBusinessQueries();
         verify(modelClient).generateStream(any(ModelInput.class), any());
         verifyNoInteractions(difyWorkflowClient);
@@ -454,11 +497,11 @@ class DatabaseAuthenticationIntegrationTest {
 
         verify(modelClient, times(2)).generateStream(any(ModelInput.class), any());
         if (permission.equals("order:query")) {
-            verify(orderTool).queryOrder("10001");
-            verify(logisticsTool, never()).queryLogistics(anyString());
+            verify(orderMapper).findOwnedOrder(TENANT, ALICE_ID, "10001");
+            verifyNoInteractions(logisticsMapper);
         } else {
-            verify(logisticsTool).queryLogistics("SF_TEST_10001");
-            verify(orderTool, never()).queryOrder(anyString());
+            verify(logisticsMapper).findOwnedLogistics(TENANT, ALICE_ID, "SF_TEST_10001");
+            verifyNoInteractions(orderMapper);
         }
         verifyNoInteractions(difyWorkflowClient);
     }
@@ -518,7 +561,7 @@ class DatabaseAuthenticationIntegrationTest {
                 assertThat(bothModelsStarted.await(10, TimeUnit.SECONDS))
                         .as("两个不同用户的 SSE 必须实际重叠执行").isTrue();
                 return proposal(input.message(), toolName, isAlice
-                        ? "{\"orderId\":\"10001\"}" : "{\"trackingNo\":\"SF_TEST_10001\"}");
+                        ? "{\"orderId\":\"10001\"}" : "{\"trackingNo\":\"SF_TEST_10002\"}");
             }
             assertThat(input.turns()).hasSize(1);
             var results = input.turns().get(0).toolResults();
@@ -527,7 +570,7 @@ class DatabaseAuthenticationIntegrationTest {
             JsonNode output = mapper.readTree(results.get(0).output());
             assertThat(output.path("status").asText()).isEqualTo("SUCCESS");
             assertThat(output.path("data").path(isAlice ? "orderId" : "trackingNo").asText())
-                    .isEqualTo(isAlice ? "10001" : "SF_TEST_10001");
+                    .isEqualTo(isAlice ? "10001" : "SF_TEST_10002");
             Consumer<String> onDelta = invocation.getArgument(1);
             onDelta.accept("完成:" + input.message());
             return answer("完成:" + input.message());
@@ -550,12 +593,172 @@ class DatabaseAuthenticationIntegrationTest {
         assertThat(byMessage.get("bob-logistics").caller().tenantId()).isEqualTo(TENANT);
         assertThat(byMessage.get("bob-logistics").authorization().permissionCodes())
                 .containsExactlyInAnyOrder("chat:agent:invoke", "logistics:query");
-        verify(orderTool).queryOrder("10001");
-        verify(logisticsTool).queryLogistics("SF_TEST_10001");
+        verify(orderMapper).findOwnedOrder(TENANT, ALICE_ID, "10001");
+        verify(logisticsMapper).findOwnedLogistics(TENANT, "db-user-bob", "SF_TEST_10002");
         verify(modelClient, times(4)).generateStream(any(ModelInput.class), any());
         expectIdentity(alice.session(), ALICE_ID);
         expectIdentity(bob.session(), "db-user-bob");
         verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "alice,10002,db-tenant-1,db-user-bob",
+            "bob,10001,db-tenant-1,db-user-alice",
+            "alice,20001,other-tenant,other-user",
+            "alice,99999,db-tenant-1,db-user-alice"
+    })
+    void shouldReturnNoAccessibleOrderDataForOtherOwnersTenantsOrMissingIds(
+            String username, String orderId, String forgedTenant, String forgedOwner) throws Exception {
+        allowAllToolsForBothUsers();
+        ClientState user = login(username, PASSWORD);
+        when(orderMapper.findOwnedOrder("other-tenant", "other-user", "20001"))
+                .thenReturn(orderRow("20001", "FOREIGN_TRACK"));
+        stubInaccessibleLookup("query_order", "orderId", orderId, forgedTenant, forgedOwner);
+
+        assertThat(finishStream(startStream(user, "查询订单"), true)).contains("未找到可访问记录");
+
+        verify(orderMapper).findOwnedOrder(TENANT, username.equals("alice") ? ALICE_ID : "db-user-bob", orderId);
+        verify(modelClient, times(2)).generateStream(any(ModelInput.class), any());
+        verifyNoInteractions(logisticsMapper, difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "alice,SF_TEST_10002,db-tenant-1,db-user-bob",
+            "bob,SF_TEST_10001,db-tenant-1,db-user-alice",
+            "alice,FOREIGN_TRACK,other-tenant,other-user",
+            "alice,missing,db-tenant-1,db-user-alice"
+    })
+    void shouldRejectKnownForeignWaybillsWithoutRevealingTheirExistence(
+            String username, String trackingNo, String forgedTenant, String forgedOwner) throws Exception {
+        allowAllToolsForBothUsers();
+        ClientState user = login(username, PASSWORD);
+        when(logisticsMapper.findOwnedLogistics("other-tenant", "other-user", "FOREIGN_TRACK"))
+                .thenReturn(logisticsRow("FOREIGN_TRACK", "private-other-tenant-location"));
+        stubInaccessibleLookup("query_logistics", "trackingNo", trackingNo, forgedTenant, forgedOwner);
+
+        String body = finishStream(startStream(user, "查询已知运单"), true);
+        assertThat(body).contains("未找到可访问记录").doesNotContain("private-other-tenant-location");
+
+        verify(logisticsMapper).findOwnedLogistics(
+                TENANT, username.equals("alice") ? ALICE_ID : "db-user-bob", trackingNo);
+        verify(modelClient, times(2)).generateStream(any(ModelInput.class), any());
+        verifyNoInteractions(orderMapper, difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"alice,10001,SF_TEST_10001", "bob,10002,SF_TEST_10002"})
+    void shouldCompleteOwnedOrderAndLogisticsChainForEitherUser(
+            String username, String orderId, String trackingNo) throws Exception {
+        allowAllToolsForBothUsers();
+        ClientState user = login(username, PASSWORD);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            if (input.turns().isEmpty()) {
+                return proposal("owned-order", "query_order", mapper.writeValueAsString(Map.of("orderId", orderId)));
+            }
+            JsonNode orderResult = mapper.readTree(input.turns().get(0).toolResults().get(0).output());
+            assertThat(orderResult.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(orderResult.path("data").path("found").asBoolean()).isTrue();
+            assertThat(orderResult.path("data").path("orderId").asText()).isEqualTo(orderId);
+            assertThat(orderResult.path("data").path("trackingNo").asText()).isEqualTo(trackingNo);
+            if (input.turns().size() == 1) {
+                return proposal("owned-logistics", "query_logistics",
+                        mapper.writeValueAsString(Map.of("trackingNo", trackingNo)));
+            }
+            assertThat(input.turns()).hasSize(2);
+            var logisticsResult = input.turns().get(1).toolResults().get(0);
+            assertThat(logisticsResult.callId()).isEqualTo("owned-logistics");
+            JsonNode data = mapper.readTree(logisticsResult.output());
+            assertThat(data.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(data.path("data").path("found").asBoolean()).isTrue();
+            assertThat(data.path("data").path("trackingNo").asText()).isEqualTo(trackingNo);
+            Consumer<String> delta = invocation.getArgument(1);
+            delta.accept("本人订单物流查询完成");
+            return answer("本人订单物流查询完成");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        assertThat(finishStream(startStream(user, "查询我的订单和物流"), true)).contains("本人订单物流查询完成");
+
+        String userId = username.equals("alice") ? ALICE_ID : "db-user-bob";
+        verify(orderMapper).findOwnedOrder(TENANT, userId, orderId);
+        verify(logisticsMapper).findOwnedLogistics(TENANT, userId, trackingNo);
+        verify(modelClient, times(3)).generateStream(any(ModelInput.class), any());
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"query_order,orderId,10001", "query_logistics,trackingNo,SF_TEST_10001"})
+    void shouldTerminateSseWithErrorWhenBusinessStorageFails(
+            String toolName, String field, String identifier) throws Exception {
+        allowAllToolsForBothUsers();
+        ClientState alice = login("alice", PASSWORD);
+        var failure = new DataAccessResourceFailureException("private-business-storage-error");
+        if (toolName.equals("query_order")) {
+            when(orderMapper.findOwnedOrder(TENANT, ALICE_ID, identifier)).thenThrow(failure);
+        } else {
+            when(logisticsMapper.findOwnedLogistics(TENANT, ALICE_ID, identifier)).thenThrow(failure);
+        }
+        when(modelClient.generateStream(any(ModelInput.class), any()))
+                .thenReturn(proposal("storage-call", toolName, mapper.writeValueAsString(Map.of(field, identifier))));
+
+        assertThat(finishStream(startStream(alice, "查询"), false)).doesNotContain("private-business-storage-error");
+        verify(modelClient).generateStream(any(ModelInput.class), any());
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @Test
+    void shouldRecheckOrderOwnershipForTheNextRequestUsingTheSameLoginSession() throws Exception {
+        alicePermissions = List.of("chat:agent:invoke", "order:query");
+        ClientState alice = login("alice", PASSWORD);
+        AtomicBoolean visible = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            if (input.turns().isEmpty()) {
+                return proposal("ownership-call", "query_order", "{\"orderId\":\"10001\"}");
+            }
+            JsonNode result = mapper.readTree(input.turns().get(0).toolResults().get(0).output());
+            assertThat(result.path("data").path("found").asBoolean()).isEqualTo(visible.get());
+            Consumer<String> delta = invocation.getArgument(1);
+            delta.accept(visible.get() ? "可访问" : "不可访问");
+            return answer(visible.get() ? "可访问" : "不可访问");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        assertThat(finishStream(startStream(alice, "第一次查询"), true)).contains("\"text\":\"可访问\"");
+        when(orderMapper.findOwnedOrder(TENANT, ALICE_ID, "10001")).thenReturn(null);
+        visible.set(false);
+        assertThat(finishStream(startStream(alice, "归属变化后再次查询"), true)).contains("\"text\":\"不可访问\"");
+
+        verify(accountMapper).findLoginAccount(TENANT, "alice");
+        verify(orderMapper, times(2)).findOwnedOrder(TENANT, ALICE_ID, "10001");
+        verifyNoInteractions(logisticsMapper, difyWorkflowClient);
+    }
+
+    private void allowAllToolsForBothUsers() {
+        alicePermissions = List.of("chat:agent:invoke", "order:query", "logistics:query");
+        bobPermissions = alicePermissions;
+    }
+
+    private void stubInaccessibleLookup(
+            String toolName, String field, String identifier, String forgedTenant, String forgedOwner) {
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            if (input.turns().isEmpty()) {
+                return proposal("inaccessible-call", toolName, mapper.writeValueAsString(Map.of(
+                        field, identifier, "tenantId", forgedTenant, "ownerUserId", forgedOwner)));
+            }
+            assertThat(input.turns()).hasSize(1);
+            var result = input.turns().get(0).toolResults().get(0);
+            assertThat(result.callId()).isEqualTo("inaccessible-call");
+            JsonNode output = mapper.readTree(result.output());
+            assertThat(output.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(output.path("data"))
+                    .isEqualTo(mapper.valueToTree(Map.of("found", false, field, identifier)));
+            Consumer<String> delta = invocation.getArgument(1);
+            delta.accept("未找到可访问记录");
+            return answer("未找到可访问记录");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
     }
 
     static Stream<Arguments> toolGrants() {
@@ -578,11 +781,21 @@ class DatabaseAuthenticationIntegrationTest {
     }
 
     private MvcResult startStream(ClientState user, String message) throws Exception {
-        return mvc.perform(post("/api/chat/chat").session(user.session())
+        return performStream(post("/api/chat/chat").session(user.session())
                         .header(user.headerName(), user.token())
                         .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
-                        .content(mapper.writeValueAsString(Map.of("message", message))))
-                .andExpect(request().asyncStarted()).andReturn();
+                        .content(mapper.writeValueAsString(Map.of("message", message))));
+    }
+
+    private MvcResult performStream(MockHttpServletRequestBuilder requestBuilder) throws Exception {
+        CountDownLatch gate = new CountDownLatch(1);
+        initialDispatch.set(gate);
+        try {
+            return mvc.perform(requestBuilder).andExpect(request().asyncStarted()).andReturn();
+        } finally {
+            initialDispatch.remove();
+            gate.countDown();
+        }
     }
 
     private String finishStream(MvcResult stream, boolean successful) throws Exception {
@@ -601,8 +814,8 @@ class DatabaseAuthenticationIntegrationTest {
     }
 
     private void verifyNoBusinessQueries() {
-        verify(orderTool, never()).queryOrder(anyString());
-        verify(logisticsTool, never()).queryLogistics(anyString());
+        verifyNoInteractions(orderMapper);
+        verifyNoInteractions(logisticsMapper);
     }
 
     private ClientState login(String username, String password) throws Exception {

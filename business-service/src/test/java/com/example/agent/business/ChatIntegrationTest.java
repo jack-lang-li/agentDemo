@@ -1,6 +1,8 @@
 package com.example.agent.business;
 
 import com.example.agent.business.integration.dify.DifyWorkflowClient;
+import com.example.agent.business.order.adapter.persistence.mapper.OrderQueryMapper;
+import com.example.agent.business.logistics.adapter.persistence.mapper.LogisticsQueryMapper;
 import com.example.agent.llm.api.ModelClient;
 import com.example.agent.llm.api.model.ModelInput;
 import com.example.agent.llm.api.model.ModelResult;
@@ -70,6 +72,12 @@ class ChatIntegrationTest {
 
     @MockitoBean
     private DifyWorkflowClient difyWorkflowClient;
+
+    @MockitoBean
+    private OrderQueryMapper orderMapper;
+
+    @MockitoBean
+    private LogisticsQueryMapper logisticsMapper;
 
     private final MockMvc mockMvc;
 

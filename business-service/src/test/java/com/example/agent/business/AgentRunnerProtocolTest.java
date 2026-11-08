@@ -11,6 +11,12 @@ import com.example.agent.llm.provider.responses.ResponsesStreamReader;
 
 import com.example.agent.llm.provider.responses.config.ModelProperties;
 import com.example.agent.business.order.tool.OrderTool;
+import com.example.agent.business.order.application.OrderQueryService;
+import com.example.agent.business.security.authorization.AuthorizedAgentTool;
+import com.example.agent.business.security.authorization.CallerAuthorization;
+import com.example.agent.agent.tool.AgentTool;
+import com.example.agent.common.core.context.CallerContext;
+import com.example.agent.common.core.context.CallerType;
 import com.example.agent.agent.tool.ToolCallExecutor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,12 +39,16 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -60,14 +70,23 @@ class AgentRunnerProtocolTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private MockRestServiceServer server;
     private OrderTool orderTool;
+    private AgentTool boundOrderTool;
+    private OrderQueryService orderQueries;
+    private final CallerAuthorization authorization = new CallerAuthorization(
+            new CallerContext("tenant-test", CallerType.USER, "user-test"), Set.of("order:query"));
     private AgentRunner runner;
 
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        // 使用真实工具定义与参数校验，只替换订单查询结果，适配当前 ToolRegistry 契约。
-        orderTool = spy(new OrderTool());
+        // 使用真实工具定义与参数校验，只替换查询服务的结果并绑定可信调用者，适配当前 ToolRegistry 契约。
+        orderQueries = mock(OrderQueryService.class);
+        orderTool = spy(new OrderTool(orderQueries));
+        boundOrderTool = new AuthorizedAgentTool(orderTool, authorization, "order:query");
+        when(orderQueries.query(authorization, "10001")).thenReturn(Map.of(
+                "found", true, "orderId", "10001", "shippingStatus", "SHIPPED",
+                "carrier", "顺丰", "trackingNo", "SF_TEST_10001"));
         ModelProperties properties = new ModelProperties();
         properties.setBaseUrl("http://model.test");
         properties.setApiKey("test-key");
@@ -100,13 +119,13 @@ class AgentRunnerProtocolTest {
                 .andRespond(withSuccess(answerResponse("请提供订单编号"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询订单")).isEqualTo("请提供订单编号");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @Test
     void shouldKeepHistoryAndReturnToolResultsAcrossMultipleRounds() {
-        doReturn(Map.of("summary", "订单10001已发货")).when(orderTool).queryOrder("10001");
-        doReturn(Map.of("summary", "未找到订单10002")).when(orderTool).queryOrder("10002");
+        doReturn(Map.of("summary", "订单10001已发货")).when(orderQueries).query(authorization, "10001");
+        doReturn(Map.of("summary", "未找到订单10002")).when(orderQueries).query(authorization, "10002");
         ObjectNode firstResponse = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         firstResponse.withArray("output").insert(0,
                 objectMapper.createObjectNode().put("type", "reasoning").put("id", "reason-1"));
@@ -131,16 +150,16 @@ class AgentRunnerProtocolTest {
                 .andRespond(withSuccess(answerResponse("订单查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询两个订单")).isEqualTo("订单查询完成");
-        var ordered = inOrder(orderTool);
-        ordered.verify(orderTool).queryOrder("10001");
-        ordered.verify(orderTool).queryOrder("10002");
-        verify(orderTool, times(2)).queryOrder(anyString());
+        var ordered = inOrder(orderQueries);
+        ordered.verify(orderQueries).query(authorization, "10001");
+        ordered.verify(orderQueries).query(authorization, "10002");
+        verify(orderQueries, times(2)).query(eq(authorization), anyString());
     }
 
     @Test
     void shouldExecuteAllToolCallsInOneResponse() {
-        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
-        doReturn(Map.of("summary", "未找到订单")).when(orderTool).queryOrder("10002");
+        doReturn(Map.of("summary", "已发货")).when(orderQueries).query(authorization, "10001");
+        doReturn(Map.of("summary", "未找到订单")).when(orderQueries).query(authorization, "10002");
         ObjectNode response = toolResponse("call-1", "query_order", "{\"orderId\":\"10001\"}");
         response.withArray("output").add(toolResponse("call-2", "query_order", "{\"orderId\":\"10002\"}")
                 .path("output").get(0));
@@ -154,9 +173,9 @@ class AgentRunnerProtocolTest {
                 .andRespond(withSuccess(answerResponse("查询完成"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询两个订单")).isEqualTo("查询完成");
-        verify(orderTool).queryOrder("10001");
-        verify(orderTool).queryOrder("10002");
-        verify(orderTool, times(2)).queryOrder(anyString());
+        verify(orderQueries).query(authorization, "10001");
+        verify(orderQueries).query(authorization, "10002");
+        verify(orderQueries, times(2)).query(eq(authorization), anyString());
     }
 
     @ParameterizedTest
@@ -169,7 +188,7 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("模型响应未完成");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @ParameterizedTest
@@ -179,7 +198,7 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("缺少有效的output数组");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @ParameterizedTest
@@ -189,7 +208,7 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("未返回有效回答");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @Test
@@ -199,7 +218,7 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不支持的工具");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @ParameterizedTest
@@ -211,7 +230,7 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("缺少call_id");
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @ParameterizedTest
@@ -222,7 +241,7 @@ class AgentRunnerProtocolTest {
                 MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> chat("查询订单")).isInstanceOf(IllegalArgumentException.class);
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @Test
@@ -246,7 +265,7 @@ class AgentRunnerProtocolTest {
                     assertThat(failure.path("error").path("code").asText()).isEqualTo("INVALID_ARGUMENTS");
                     assertThat(failure.path("error").path("message").asText())
                             .isEqualTo("orderId必须是非空字符串");
-                    verify(orderTool, never()).queryOrder(anyString());
+                    verify(orderQueries, never()).query(eq(authorization), anyString());
                 })
                 .andRespond(withSuccess(
                         toolResponse("corrected-call", "query_order", "{\"orderId\":\"10001\"}").toString(),
@@ -273,8 +292,8 @@ class AgentRunnerProtocolTest {
                 .andRespond(withSuccess(answerResponse("订单10001已发货"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询订单10001的状态")).isEqualTo("订单10001已发货");
-        verify(orderTool, times(1)).queryOrder("10001");
-        verify(orderTool, times(1)).queryOrder(anyString());
+        verify(orderQueries, times(1)).query(authorization, "10001");
+        verify(orderQueries, times(1)).query(eq(authorization), anyString());
     }
 
     @Test
@@ -286,16 +305,16 @@ class AgentRunnerProtocolTest {
                 .andRespond(withSuccess(toolResponse("bad-2", "query_order", "{}").toString(),
                         MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> runner.run(new AgentRequest(null, "查询订单", List.of(orderTool), 2)))
+        assertThatThrownBy(() -> runner.run(new AgentRequest(null, "查询订单", List.of(boundOrderTool), 2)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("轮数上限");
         // 第一轮尝试执行并反馈参数错误；最后一轮已无法回传结果，不再执行。
-        verify(orderTool, times(1)).execute(any(JsonNode.class));
-        verify(orderTool, never()).queryOrder(anyString());
+        verify(orderTool, times(1)).execute(any(JsonNode.class), eq(authorization));
+        verify(orderQueries, never()).query(eq(authorization), anyString());
     }
 
     @Test
     void shouldStopAtFiveRoundsWithoutExecutingLastRoundTools() {
-        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
+        doReturn(Map.of("summary", "已发货")).when(orderQueries).query(authorization, "10001");
         for (int round = 1; round <= 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
@@ -303,13 +322,13 @@ class AgentRunnerProtocolTest {
 
         assertThatThrownBy(() -> chat("查询订单"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("达到模型调用轮数上限");
-        verify(orderTool, times(4)).queryOrder("10001");
-        verify(orderTool, times(4)).queryOrder(anyString());
+        verify(orderQueries, times(4)).query(authorization, "10001");
+        verify(orderQueries, times(4)).query(eq(authorization), anyString());
     }
 
     @Test
     void shouldAcceptFinalAnswerOnFifthRound() {
-        doReturn(Map.of("summary", "已发货")).when(orderTool).queryOrder("10001");
+        doReturn(Map.of("summary", "已发货")).when(orderQueries).query(authorization, "10001");
         for (int round = 1; round < 5; round++) {
             expectRequest().andRespond(withSuccess(toolResponse("call-" + round, "query_order",
                     "{\"orderId\":\"10001\"}").toString(), MediaType.APPLICATION_JSON));
@@ -317,13 +336,13 @@ class AgentRunnerProtocolTest {
         expectRequest().andRespond(withSuccess(answerResponse("最终回答"), MediaType.APPLICATION_JSON));
 
         assertThat(chat("查询订单")).isEqualTo("最终回答");
-        verify(orderTool, times(4)).queryOrder("10001");
-        verify(orderTool, times(4)).queryOrder(anyString());
+        verify(orderQueries, times(4)).query(authorization, "10001");
+        verify(orderQueries, times(4)).query(eq(authorization), anyString());
     }
 
     private String chat(String message) {
         // 本测试业务只开放订单工具，公共模型客户端和 Agent 不自动补充全局工具。
-        return runner.run(new AgentRequest(message, List.of(orderTool)));
+        return runner.run(new AgentRequest(message, List.of(boundOrderTool)));
     }
 
     private ResponseActions expectRequest() {

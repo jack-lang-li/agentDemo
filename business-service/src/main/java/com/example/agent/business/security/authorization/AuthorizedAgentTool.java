@@ -14,12 +14,12 @@ import java.util.Objects;
  */
 public final class AuthorizedAgentTool implements AgentTool {
 
-    private final AgentTool delegate;
+    private final CallerAwareAgentTool delegate;
     private final CallerAuthorization authorization;
     private final String requiredPermission;
 
     public AuthorizedAgentTool(
-            AgentTool delegate,
+            CallerAwareAgentTool delegate,
             CallerAuthorization authorization,
             String requiredPermission) {
 
@@ -57,6 +57,6 @@ public final class AuthorizedAgentTool implements AgentTool {
     public Object execute(JsonNode arguments) {
         // 授权通过后，才允许进入原工具的业务操作。
         authorization.requirePermission(requiredPermission);
-        return delegate.execute(arguments);
+        return delegate.execute(arguments, authorization);
     }
 }

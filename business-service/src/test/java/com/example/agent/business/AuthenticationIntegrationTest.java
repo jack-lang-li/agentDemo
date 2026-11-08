@@ -1,6 +1,8 @@
 package com.example.agent.business;
 
 import com.example.agent.business.identity.security.AuthenticatedUser;
+import com.example.agent.business.order.adapter.persistence.mapper.OrderQueryMapper;
+import com.example.agent.business.logistics.adapter.persistence.mapper.LogisticsQueryMapper;
 import com.example.agent.business.integration.dify.DifyWorkflowClient;
 import com.example.agent.llm.api.ModelClient;
 import com.example.agent.llm.api.model.ModelInput;
@@ -72,6 +74,12 @@ class AuthenticationIntegrationTest {
 
     @MockitoBean
     private DifyWorkflowClient difyWorkflowClient;
+
+    @MockitoBean
+    private OrderQueryMapper orderMapper;
+
+    @MockitoBean
+    private LogisticsQueryMapper logisticsMapper;
 
     @ParameterizedTest
     @ValueSource(strings = {"/api/auth/me", "/actuator/info"})

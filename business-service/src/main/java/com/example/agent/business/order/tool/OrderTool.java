@@ -1,21 +1,31 @@
 package com.example.agent.business.order.tool;
 
-import com.example.agent.agent.tool.AgentTool;
-
-import com.example.agent.llm.api.enums.JsonSchemaType;
-import com.example.agent.business.tool.enums.ShippingStatus;
+import com.example.agent.agent.tool.exception.InvalidToolArgumentsException;
+import com.example.agent.business.order.application.OrderQueryService;
+import com.example.agent.business.security.authorization.CallerAuthorization;
+import com.example.agent.business.security.authorization.CallerAwareAgentTool;
 import com.example.agent.business.tool.enums.ToolName;
+import com.example.agent.llm.api.enums.JsonSchemaType;
 import com.example.agent.llm.api.enums.ToolType;
 import com.example.agent.llm.api.model.ModelTool;
-import com.example.agent.agent.tool.exception.InvalidToolArgumentsException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
-public class OrderTool implements AgentTool {
+public class OrderTool implements CallerAwareAgentTool {
+
+    private final OrderQueryService orderQueryService;
+
+    public OrderTool(OrderQueryService orderQueryService) {
+        this.orderQueryService = Objects.requireNonNull(
+                orderQueryService,
+                "orderQueryService 不能为空"
+        );
+    }
 
     @Override
     public String name() {
@@ -45,6 +55,7 @@ public class OrderTool implements AgentTool {
         tool.setDescription(
                 "根据订单编号查询订单状态、物流公司和运单号。"
                         + "需要查询订单物流，但尚无运单号时，可先使用此工具。"
+                        + "仅查询当前用户归属的订单；found=false表示未找到可访问记录。"
         );
         tool.setParameters(parameters);
 
@@ -52,7 +63,8 @@ public class OrderTool implements AgentTool {
     }
 
     @Override
-    public Map<String, Object> execute(JsonNode arguments) {
+    public Map<String, Object> execute(JsonNode arguments,
+                                       CallerAuthorization authorization) {
 
         if (arguments == null || !arguments.isObject()) {
             throw new InvalidToolArgumentsException(
@@ -70,27 +82,11 @@ public class OrderTool implements AgentTool {
             );
         }
 
-        // 参数校验通过后，才执行实际查询。
-        return queryOrder(orderIdNode.asText());
-    }
-
-    public Map<String, Object> queryOrder(String orderId) {
-
-        // 固定的模拟订单数据
-        if ("10001".equals(orderId)) {
-            return Map.of(
-                    "found", true,
-                    "orderId", orderId,
-                    "shippingStatus", ShippingStatus.SHIPPED.getValue(),
-                    "carrier", "顺丰",
-                    "trackingNo", "SF_TEST_10001"
-            );
-        }
-
-        return Map.of(
-                "found", false,
-                "orderId", orderId
+        return orderQueryService.query(
+                authorization,
+                orderIdNode.asText()
         );
     }
+
 
 }

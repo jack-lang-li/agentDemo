@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.agent.business.logistics.adapter.persistence.mapper.LogisticsQueryMapper">
+
+    <resultMap id="logisticsQuery"
+               type="com.example.agent.business.logistics.adapter.persistence.model.LogisticsQueryRow">
+        <id property="trackingNo" column="tracking_no"/>
+        <result property="currentLocation" column="current_location"/>
+        <result property="latestEvent" column="latest_event"/>
+    </resultMap>
+
+    <select id="findOwnedLogistics"
+            resultMap="logisticsQuery"
+            useCache="false">
+        SELECT
+        s.tracking_no,
+        s.current_location,
+        s.latest_event
+        FROM biz_order_shipment s
+        INNER JOIN biz_order o
+        ON o.tenant_id = s.tenant_id
+        AND o.order_id = s.order_id
+        WHERE s.tenant_id = #{tenantId}
+        AND o.owner_user_id = #{ownerUserId}
+        AND s.tracking_no = #{trackingNo}
+    </select>
+
+</mapper>

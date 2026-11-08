@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.agent.business.order.adapter.persistence.mapper.OrderQueryMapper">
+
+    <resultMap id="orderQuery"
+               type="com.example.agent.business.order.adapter.persistence.model.OrderQueryRow">
+        <id property="orderId" column="order_id"/>
+        <result property="shippingStatus" column="shipping_status"/>
+        <result property="carrier" column="carrier"/>
+        <result property="trackingNo" column="tracking_no"/>
+    </resultMap>
+
+    <select id="findOwnedOrder"
+            resultMap="orderQuery"
+            useCache="false">
+        SELECT
+        o.order_id,
+        o.shipping_status,
+        s.carrier,
+        s.tracking_no
+        FROM biz_order o
+        LEFT JOIN biz_order_shipment s
+        ON s.tenant_id = o.tenant_id
+        AND s.order_id = o.order_id
+        WHERE o.tenant_id = #{tenantId}
+        AND o.owner_user_id = #{ownerUserId}
+        AND o.order_id = #{orderId}
+    </select>
+
+</mapper>

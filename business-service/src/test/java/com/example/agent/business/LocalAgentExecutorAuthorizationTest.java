@@ -6,6 +6,8 @@ import com.example.agent.business.chat.application.model.ChatCommand;
 import com.example.agent.business.chat.execution.impl.LocalAgentExecutor;
 import com.example.agent.business.logistics.tool.LogisticsTool;
 import com.example.agent.business.order.tool.OrderTool;
+import com.example.agent.business.order.application.OrderQueryService;
+import com.example.agent.business.logistics.application.LogisticsQueryService;
 import com.example.agent.business.security.authorization.AuthorizedAgentTool;
 import com.example.agent.business.security.authorization.CallerAuthorization;
 import com.example.agent.common.core.context.CallerContext;
@@ -33,7 +35,9 @@ class LocalAgentExecutorAuthorizationTest {
     void shouldSelectOnlyGrantedToolsForBlockingExecution(Set<String> permissions, List<String> expectedTools) {
         AgentRunner runner = mock(AgentRunner.class);
         when(runner.run(any())).thenReturn("回答");
-        LocalAgentExecutor executor = new LocalAgentExecutor(runner, new OrderTool(), new LogisticsTool());
+        LocalAgentExecutor executor = new LocalAgentExecutor(runner,
+                new OrderTool(mock(OrderQueryService.class)),
+                new LogisticsTool(mock(LogisticsQueryService.class)));
         CallerAuthorization authorization = new CallerAuthorization(
                 new CallerContext("tenant-1", CallerType.USER, "user-1"), permissions);
 

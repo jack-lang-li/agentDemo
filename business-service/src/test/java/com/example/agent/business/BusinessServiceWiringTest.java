@@ -3,6 +3,8 @@ package com.example.agent.business;
 import com.example.agent.agent.AgentRunner;
 import com.example.agent.agent.DefaultAgentRunner;
 import com.example.agent.business.integration.dify.DifyWorkflowClient;
+import com.example.agent.business.order.adapter.persistence.mapper.OrderQueryMapper;
+import com.example.agent.business.logistics.adapter.persistence.mapper.LogisticsQueryMapper;
 import com.example.agent.llm.api.ModelClient;
 import com.example.agent.llm.provider.responses.ResponsesModelClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,6 +17,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -41,6 +44,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @ActiveProfiles({"dev", "dev-memory", "no-db-test"})
 class BusinessServiceWiringTest {
+
+    @MockitoBean
+    private OrderQueryMapper orderMapper;
+
+    @MockitoBean
+    private LogisticsQueryMapper logisticsMapper;
 
     @Autowired
     private ApplicationContext context;

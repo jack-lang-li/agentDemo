@@ -1,20 +1,31 @@
 package com.example.agent.business.logistics.tool;
 
-import com.example.agent.agent.tool.AgentTool;
-
-import com.example.agent.llm.api.enums.JsonSchemaType;
+import com.example.agent.agent.tool.exception.InvalidToolArgumentsException;
+import com.example.agent.business.logistics.application.LogisticsQueryService;
+import com.example.agent.business.security.authorization.CallerAuthorization;
+import com.example.agent.business.security.authorization.CallerAwareAgentTool;
 import com.example.agent.business.tool.enums.ToolName;
+import com.example.agent.llm.api.enums.JsonSchemaType;
 import com.example.agent.llm.api.enums.ToolType;
 import com.example.agent.llm.api.model.ModelTool;
-import com.example.agent.agent.tool.exception.InvalidToolArgumentsException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
-public class LogisticsTool implements AgentTool {
+public class LogisticsTool implements CallerAwareAgentTool {
+
+    private final LogisticsQueryService logisticsQueryService;
+
+    public LogisticsTool(LogisticsQueryService logisticsQueryService) {
+        this.logisticsQueryService = Objects.requireNonNull(
+                logisticsQueryService,
+                "logisticsQueryService 不能为空"
+        );
+    }
 
     @Override
     public String name() {
@@ -45,6 +56,7 @@ public class LogisticsTool implements AgentTool {
                 "根据物流运单号查询包裹当前位置和最新物流记录。"
                         + "只有订单编号时，可先通过订单查询工具获取运单号。"
                         + "缺少运单号时不得编造。"
+                        + "仅查询归属当前用户的订单物流；found=false表示未找到可访问记录。"
         );
         tool.setParameters(parameters);
 
@@ -52,7 +64,8 @@ public class LogisticsTool implements AgentTool {
     }
 
     @Override
-    public Map<String, Object> execute(JsonNode arguments) {
+    public Map<String, Object> execute(JsonNode arguments,
+                                       CallerAuthorization authorization) {
 
         if (arguments == null || !arguments.isObject()) {
             throw new InvalidToolArgumentsException(
@@ -70,24 +83,10 @@ public class LogisticsTool implements AgentTool {
             );
         }
 
-        return queryLogistics(trackingNoNode.asText());
-    }
-
-    public Map<String, Object> queryLogistics(String trackingNo) {
-
-        // 固定的模拟物流数据
-        if ("SF_TEST_10001".equals(trackingNo)) {
-            return Map.of(
-                    "found", true,
-                    "trackingNo", trackingNo,
-                    "currentLocation", "南宁转运中心",
-                    "latestEvent", "包裹已到达转运中心，等待发往下一站"
-            );
-        }
-
-        return Map.of(
-                "found", false,
-                "trackingNo", trackingNo
+        return logisticsQueryService.query(
+                authorization,
+                trackingNoNode.asText()
         );
     }
+
 }
