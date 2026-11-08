@@ -2,12 +2,16 @@ package com.example.agent.business.identity.security;
 
 import com.example.agent.business.identity.api.CurrentCallerProvider;
 import com.example.agent.business.identity.security.AuthenticatedUser;
+import com.example.agent.business.security.authorization.CallerAuthorization;
 import com.example.agent.common.core.context.CallerContext;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+
+import java.util.stream.Collectors;
 
 /**
  * 从 Spring Security 认证结果取得内部调用者。
@@ -20,7 +24,7 @@ public class SecurityContextCurrentCallerProvider
         implements CurrentCallerProvider {
 
     @Override
-    public CallerContext requireCurrentCaller() {
+    public CallerAuthorization requireCurrentAuthorization() {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
 
@@ -43,6 +47,11 @@ public class SecurityContextCurrentCallerProvider
             );
         }
 
-        return user.callerContext();
+        return new CallerAuthorization(
+                user.callerContext(),
+                authentication.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .collect(Collectors.toSet())
+        );
     }
 }

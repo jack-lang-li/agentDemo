@@ -1,6 +1,7 @@
 package com.example.agent.business.identity.api;
 
 
+import com.example.agent.business.security.authorization.CallerAuthorization;
 import com.example.agent.common.core.context.CallerContext;
 
 /**
@@ -14,8 +15,9 @@ import com.example.agent.common.core.context.CallerContext;
  * 无法确定调用者时应明确失败，不返回 null，
  * 也不自动回退到默认用户。</p>
  *
- * <p>当前提供开发模拟实现。
- * 后续认证阶段再实现从认证结果提取内部身份。</p>
+ * <p> * <p>当前从已认证结果提取内部身份及权限。
+ *  * 需要授权信息的业务入口取得完整快照后，
+ *  * 通过业务命令显式传入后续执行。</p></p>
  */
 public interface CurrentCallerProvider {
 
@@ -24,5 +26,13 @@ public interface CurrentCallerProvider {
      *
      * @return 非 null、字段完整的上下文
      */
-    CallerContext requireCurrentCaller();
+    default CallerContext requireCurrentCaller() {
+        return requireCurrentAuthorization().caller();
+    }
+
+    /**
+     * 一次取得相互对应的身份与权限，
+     * 供业务入口显式传入后续执行。
+     */
+    CallerAuthorization requireCurrentAuthorization();
 }

@@ -216,7 +216,7 @@ class AuthenticationIntegrationTest {
 
     @ParameterizedTest
     @CsvSource({
-            "alice,Alice-test-123,chat:agent:invoke|chat:workflow:invoke",
+            "alice,Alice-test-123,chat:agent:invoke|chat:workflow:invoke|order:query|logistics:query",
             "bob,Bob-test-123,chat:workflow:invoke"
     })
     void shouldStoreExactAccountPermissionsInAuthenticatedSession(

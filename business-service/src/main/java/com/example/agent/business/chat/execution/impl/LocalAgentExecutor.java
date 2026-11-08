@@ -2,21 +2,28 @@ package com.example.agent.business.chat.execution.impl;
 
 import com.example.agent.agent.AgentRequest;
 import com.example.agent.agent.AgentRunner;
+import com.example.agent.agent.tool.AgentTool;
 import com.example.agent.business.chat.execution.ChatExecutorCodes;
 import com.example.agent.business.chat.execution.StreamingChatExecutor;
 import com.example.agent.business.chat.application.model.ChatCommand;
 import com.example.agent.business.logistics.tool.LogisticsTool;
 import com.example.agent.business.order.tool.OrderTool;
+import com.example.agent.business.security.authorization.AuthorizedAgentTool;
+import com.example.agent.business.security.authorization.CallerAuthorization;
+import com.example.agent.business.security.permission.BusinessPermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * 自建 Agent 的执行适配器，同时支持完整回答与增量输出。
  *
- * <p>当前演示场景需要订单和物流工具，因此由这个业务适配器显式提供这两个工具。
+ * <p>根据本次调用的权限选择订单、物流工具，
+ *  * 并通过授权包装器执行。
+ *  * 同步与流式执行共用相同的工具选择逻辑。
  * 其他业务可提供自己的 AgentRequest；公共模型客户端和 Agent 循环不需要增加业务分支。</p>
  */
 @Component
@@ -48,8 +55,28 @@ public class LocalAgentExecutor implements StreamingChatExecutor {
     }
 
     private AgentRequest createRequest(ChatCommand command) {
-        // 工具名称、用途、参数和实际执行分别由两个业务工具实现提供。
-        // 当前工具使用模拟数据；以后需要用户相关操作时，由业务工具执行真实权限校验。
-        return new AgentRequest(command.message(), List.of(orderTool, logisticsTool));
+        CallerAuthorization authorization = command.authorization();
+
+        List<AgentTool> tools = new ArrayList<>();
+
+        if (authorization.hasPermission(BusinessPermissions.ORDER_QUERY)) {
+            tools.add(new AuthorizedAgentTool(
+                    orderTool,
+                    authorization,
+                    BusinessPermissions.ORDER_QUERY
+            ));
+        }
+
+        if (authorization.hasPermission(BusinessPermissions.LOGISTICS_QUERY)) {
+            tools.add(new AuthorizedAgentTool(
+                    logisticsTool,
+                    authorization,
+                    BusinessPermissions.LOGISTICS_QUERY
+            ));
+        }
+
+        // 空列表仍可普通聊天。
+        // 模型只能看到本次选择的工具，包装器在执行时再次校验权限。
+        return new AgentRequest(command.message(), tools);
     }
 }

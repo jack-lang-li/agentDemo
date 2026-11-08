@@ -1,6 +1,7 @@
 package com.example.agent.business.chat.web;
 
 import com.example.agent.business.identity.api.CurrentCallerProvider;
+import com.example.agent.business.security.authorization.CallerAuthorization;
 import com.example.agent.common.core.context.CallerContext;
 import com.example.agent.common.web.sse.SseWriter;
 import com.example.agent.business.chat.dto.ChatRequest;
@@ -134,15 +135,16 @@ public class ChatController {
      * 统一创建聊天业务命令。
      *
      * 请求体只提供业务参数；
-     * 调用者上下文由服务端身份入口提供。
+     * // 在入口创建命令，身份和权限获取发生在异步回调之前。
+     *  * 身份与权限快照由服务端认证入口提供。
      */
     private ChatCommand createCommand(ChatRequest request) {
-        CallerContext caller =
-                currentCallerProvider.requireCurrentCaller();
+        CallerAuthorization authorization =
+                currentCallerProvider.requireCurrentAuthorization();
 
         return new ChatCommand(
                 request.getMessage(),
-                caller
+                authorization
         );
     }
 }

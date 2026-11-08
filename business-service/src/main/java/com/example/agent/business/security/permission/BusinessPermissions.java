@@ -4,7 +4,7 @@ package com.example.agent.business.security.permission;
  * 业务服务的权限码。
  *
  * 权限码表达用户可以执行的业务操作。
- * 后续权限入库时，数据库保存相同的字符串，
+ *  * 数据库权限目录保存相同的字符串，便于统一管理。
  * HTTP 授权规则继续引用这里的常量。
  */
 public final class BusinessPermissions {
@@ -26,6 +26,20 @@ public final class BusinessPermissions {
      */
     public static final String CHAT_WORKFLOW_INVOKE =
             "chat:workflow:invoke";
+
+    /**
+     * 使用订单查询工具。
+     * 具体订单的数据访问范围由业务服务另行校验。
+     */
+    public static final String ORDER_QUERY =
+            "order:query";
+
+    /**
+     * 使用物流查询工具。
+     * 具体物流记录的数据访问范围由业务服务另行校验。
+     */
+    public static final String LOGISTICS_QUERY =
+            "logistics:query";
 
     private BusinessPermissions() {
     }

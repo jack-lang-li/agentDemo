@@ -41,9 +41,12 @@ public class DevAccountConfiguration {
                         "demo-user-1",
                         passwordEncoder.encode(alicePassword),
                         // alice 可以使用两个聊天入口。
+                        // alice 可以使用两个聊天入口和两个业务查询工具。
                         Set.of(
                                 BusinessPermissions.CHAT_AGENT_INVOKE,
-                                BusinessPermissions.CHAT_WORKFLOW_INVOKE
+                                BusinessPermissions.CHAT_WORKFLOW_INVOKE,
+                                BusinessPermissions.ORDER_QUERY,
+                                BusinessPermissions.LOGISTICS_QUERY
                         )
                 ),
                 "bob", new Account(

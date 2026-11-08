@@ -4,7 +4,12 @@ import com.example.agent.business.identity.adapter.persistence.DatabaseUserDetai
 import com.example.agent.business.identity.adapter.persistence.mapper.LocalAccountMapper;
 import com.example.agent.business.identity.adapter.persistence.model.LocalAccountRow;
 import com.example.agent.business.identity.security.AuthenticatedUser;
+import com.example.agent.business.chat.application.ChatService;
+import com.example.agent.business.chat.application.model.ChatCommand;
+import com.example.agent.business.chat.execution.ChatExecutorCodes;
 import com.example.agent.business.integration.dify.DifyWorkflowClient;
+import com.example.agent.business.logistics.tool.LogisticsTool;
+import com.example.agent.business.order.tool.OrderTool;
 import com.example.agent.llm.api.ModelClient;
 import com.example.agent.llm.api.model.ModelInput;
 import com.example.agent.llm.api.model.ModelResult;
@@ -14,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.aop.support.AopUtils;
@@ -35,6 +42,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -45,15 +53,24 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static com.example.agent.testsupport.ModelFixtures.answer;
+import static com.example.agent.testsupport.ModelFixtures.proposal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -97,9 +114,13 @@ class DatabaseAuthenticationIntegrationTest {
     @MockitoBean private LocalAccountMapper accountMapper;
     @MockitoBean private ModelClient modelClient;
     @MockitoBean private DifyWorkflowClient difyWorkflowClient;
+    @MockitoSpyBean private OrderTool orderTool;
+    @MockitoSpyBean private LogisticsTool logisticsTool;
+    @MockitoSpyBean private ChatService chatService;
 
     private String aliceHash;
     private List<String> alicePermissions;
+    private List<String> bobPermissions;
     private int aliceEnabled;
 
     @BeforeEach
@@ -108,6 +129,7 @@ class DatabaseAuthenticationIntegrationTest {
         aliceHash = storedHash;
         aliceEnabled = 1;
         alicePermissions = List.of("chat:agent:invoke", "chat:workflow:invoke");
+        bobPermissions = List.of("chat:workflow:invoke");
         when(accountMapper.findLoginAccount(anyString(), anyString())).thenAnswer(invocation -> {
             if (!TENANT.equals(invocation.getArgument(0))) {
                 return null;
@@ -129,7 +151,7 @@ class DatabaseAuthenticationIntegrationTest {
             }
             return switch (userId) {
                 case ALICE_ID -> alicePermissions;
-                case "db-user-bob" -> List.of("chat:workflow:invoke");
+                case "db-user-bob" -> bobPermissions;
                 default -> List.of();
             };
         });
@@ -319,6 +341,268 @@ class DatabaseAuthenticationIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("CSRF_INVALID"));
         verifyNoInteractions(accountMapper, modelClient, difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @MethodSource("toolGrants")
+    void shouldExposeOnlyGrantedToolsAndAllowPlainChatWithoutTools(
+            List<String> permissions, List<String> expectedTools) throws Exception {
+        alicePermissions = permissions;
+        ClientState alice = login("alice", PASSWORD);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            assertThat(input.tools()).extracting(tool -> tool.getName())
+                    .containsExactlyElementsOf(expectedTools);
+            Consumer<String> onDelta = invocation.getArgument(1);
+            onDelta.accept("普通聊天回答");
+            return answer("普通聊天回答");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        assertThat(finishStream(startStream(alice, "你好"), true)).contains("普通聊天回答");
+
+        verify(modelClient).generateStream(any(ModelInput.class), any());
+        verifyNoBusinessQueries();
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @MethodSource("forbiddenToolCalls")
+    void shouldRejectForcedToolCallsDespiteForgedClientPermissions(
+            List<String> permissions, String forbiddenTool, List<String> visibleTools) throws Exception {
+        alicePermissions = permissions;
+        ClientState alice = login("alice", PASSWORD);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            assertThat(input.tools()).extracting(tool -> tool.getName())
+                    .containsExactlyElementsOf(visibleTools).doesNotContain(forbiddenTool);
+            return proposal("forbidden-call", forbiddenTool,
+                    "{\"orderId\":\"10001\",\"trackingNo\":\"SF_TEST_10001\"}");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        MvcResult stream = mvc.perform(post("/api/chat/chat").session(alice.session())
+                        .header(alice.headerName(), alice.token())
+                        .header("X-Permissions", "chat:agent:invoke,order:query,logistics:query")
+                        .header("X-User-Id", "forged-user")
+                        .header("X-Tenant-Id", "forged-tenant")
+                        .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""
+                                {"message":"越权调用","userId":"forged-user",
+                                 "permissionCodes":["order:query","logistics:query"],
+                                 "authorization":{"permissionCodes":["order:query","logistics:query"]}}
+                                """))
+                .andExpect(request().asyncStarted()).andReturn();
+
+        assertThat(finishStream(stream, false))
+                .doesNotContain("forbidden-call", "forged-user", "SF_TEST_10001", "不支持的工具");
+        verify(modelClient).generateStream(any(ModelInput.class), any());
+        verify(orderTool, never()).execute(any());
+        verify(logisticsTool, never()).execute(any());
+        verifyNoBusinessQueries();
+        expectIdentity(alice.session(), ALICE_ID);
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @Test
+    void shouldRejectTheWholeToolBatchBeforeAnEarlierAllowedQueryExecutes() throws Exception {
+        alicePermissions = List.of("chat:agent:invoke", "order:query");
+        ClientState alice = login("alice", PASSWORD);
+        ModelResult allowed = proposal("allowed-order", "query_order", "{\"orderId\":\"10001\"}");
+        ModelResult forbidden = proposal("forbidden-logistics", "query_logistics",
+                "{\"trackingNo\":\"SF_TEST_10001\"}");
+        when(modelClient.generateStream(any(ModelInput.class), any())).thenReturn(new ModelResult("",
+                List.of(allowed.toolCalls().get(0), forbidden.toolCalls().get(0)),
+                List.of(allowed.outputItems().get(0), forbidden.outputItems().get(0))));
+
+        finishStream(startStream(alice, "同一轮包含两个工具"), false);
+
+        verify(orderTool, never()).execute(any());
+        verify(logisticsTool, never()).execute(any());
+        verifyNoBusinessQueries();
+        verify(modelClient).generateStream(any(ModelInput.class), any());
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "order:query,query_order,orderId,10001",
+            "logistics:query,query_logistics,trackingNo,SF_TEST_10001"
+    })
+    void shouldExecuteTheGrantedToolAndReturnItsResultToTheModel(
+            String permission, String toolName, String field, String value) throws Exception {
+        alicePermissions = List.of("chat:agent:invoke", permission);
+        ClientState alice = login("alice", PASSWORD);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            assertThat(input.tools()).extracting(tool -> tool.getName()).containsExactly(toolName);
+            if (input.turns().isEmpty()) {
+                return proposal("granted-call", toolName,
+                        mapper.writeValueAsString(Map.of(field, value)));
+            }
+            assertThat(input.turns()).hasSize(1);
+            var results = input.turns().get(0).toolResults();
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).callId()).isEqualTo("granted-call");
+            JsonNode output = mapper.readTree(results.get(0).output());
+            assertThat(output.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(output.path("data").path(field).asText()).isEqualTo(value);
+            Consumer<String> onDelta = invocation.getArgument(1);
+            onDelta.accept("查询完成");
+            return answer("查询完成");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        assertThat(finishStream(startStream(alice, "查询获准的数据"), true)).contains("查询完成");
+
+        verify(modelClient, times(2)).generateStream(any(ModelInput.class), any());
+        if (permission.equals("order:query")) {
+            verify(orderTool).queryOrder("10001");
+            verify(logisticsTool, never()).queryLogistics(anyString());
+        } else {
+            verify(logisticsTool).queryLogistics("SF_TEST_10001");
+            verify(orderTool, never()).queryOrder(anyString());
+        }
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    @Test
+    void shouldDenyAgentEntryWhenOnlyToolPermissionsAreGranted() throws Exception {
+        alicePermissions = List.of("order:query", "logistics:query");
+        ClientState alice = login("alice", PASSWORD);
+
+        expectForbiddenChat(alice, "/api/chat/chat");
+        expectIdentity(alice.session(), ALICE_ID);
+
+        verifyNoBusinessQueries();
+        verifyNoInteractions(modelClient, difyWorkflowClient);
+    }
+
+    @Test
+    void shouldKeepLoginToolSnapshotUntilTheUserLogsInAgain() throws Exception {
+        alicePermissions = List.of("chat:agent:invoke", "order:query");
+        ClientState previous = login("alice", PASSWORD);
+        alicePermissions = List.of("chat:agent:invoke", "logistics:query");
+        ClientState current = login("alice", PASSWORD);
+        clearInvocations(accountMapper);
+        doAnswer(invocation -> {
+            Consumer<String> onDelta = invocation.getArgument(1);
+            onDelta.accept("回答");
+            return answer("回答");
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        finishStream(startStream(previous, "旧会话"), true);
+        finishStream(startStream(current, "新会话"), true);
+
+        var inputs = ArgumentCaptor.forClass(ModelInput.class);
+        verify(modelClient, times(2)).generateStream(inputs.capture(), any());
+        assertThat(inputs.getAllValues().get(0).tools()).extracting(tool -> tool.getName())
+                .containsExactly("query_order");
+        assertThat(inputs.getAllValues().get(1).tools()).extracting(tool -> tool.getName())
+                .containsExactly("query_logistics");
+        verifyNoBusinessQueries();
+        verifyNoInteractions(accountMapper, difyWorkflowClient);
+    }
+
+    @Test
+    void shouldKeepIdentityPermissionsAndToolResultsSeparateForConcurrentSseUsers() throws Exception {
+        alicePermissions = List.of("chat:agent:invoke", "order:query");
+        bobPermissions = List.of("chat:agent:invoke", "logistics:query");
+        ClientState alice = login("alice", PASSWORD);
+        ClientState bob = login("bob", PASSWORD);
+        CountDownLatch bothModelsStarted = new CountDownLatch(2);
+        doAnswer(invocation -> {
+            ModelInput input = invocation.getArgument(0);
+            boolean isAlice = input.message().equals("alice-order");
+            String toolName = isAlice ? "query_order" : "query_logistics";
+            assertThat(input.tools()).extracting(tool -> tool.getName()).containsExactly(toolName);
+            if (input.turns().isEmpty()) {
+                bothModelsStarted.countDown();
+                assertThat(bothModelsStarted.await(10, TimeUnit.SECONDS))
+                        .as("两个不同用户的 SSE 必须实际重叠执行").isTrue();
+                return proposal(input.message(), toolName, isAlice
+                        ? "{\"orderId\":\"10001\"}" : "{\"trackingNo\":\"SF_TEST_10001\"}");
+            }
+            assertThat(input.turns()).hasSize(1);
+            var results = input.turns().get(0).toolResults();
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).callId()).isEqualTo(input.message());
+            JsonNode output = mapper.readTree(results.get(0).output());
+            assertThat(output.path("status").asText()).isEqualTo("SUCCESS");
+            assertThat(output.path("data").path(isAlice ? "orderId" : "trackingNo").asText())
+                    .isEqualTo(isAlice ? "10001" : "SF_TEST_10001");
+            Consumer<String> onDelta = invocation.getArgument(1);
+            onDelta.accept("完成:" + input.message());
+            return answer("完成:" + input.message());
+        }).when(modelClient).generateStream(any(ModelInput.class), any());
+
+        MvcResult aliceStream = startStream(alice, "alice-order");
+        MvcResult bobStream = startStream(bob, "bob-logistics");
+        assertThat(finishStream(aliceStream, true)).contains("完成:alice-order").doesNotContain("完成:bob-logistics");
+        assertThat(finishStream(bobStream, true)).contains("完成:bob-logistics").doesNotContain("完成:alice-order");
+
+        var commands = ArgumentCaptor.forClass(ChatCommand.class);
+        verify(chatService, times(2)).chatStream(eq(ChatExecutorCodes.LOCAL_AGENT), commands.capture(), any(), any());
+        Map<String, ChatCommand> byMessage = commands.getAllValues().stream()
+                .collect(Collectors.toMap(ChatCommand::message, command -> command));
+        assertThat(byMessage.get("alice-order").caller().callerId()).isEqualTo(ALICE_ID);
+        assertThat(byMessage.get("alice-order").caller().tenantId()).isEqualTo(TENANT);
+        assertThat(byMessage.get("alice-order").authorization().permissionCodes())
+                .containsExactlyInAnyOrder("chat:agent:invoke", "order:query");
+        assertThat(byMessage.get("bob-logistics").caller().callerId()).isEqualTo("db-user-bob");
+        assertThat(byMessage.get("bob-logistics").caller().tenantId()).isEqualTo(TENANT);
+        assertThat(byMessage.get("bob-logistics").authorization().permissionCodes())
+                .containsExactlyInAnyOrder("chat:agent:invoke", "logistics:query");
+        verify(orderTool).queryOrder("10001");
+        verify(logisticsTool).queryLogistics("SF_TEST_10001");
+        verify(modelClient, times(4)).generateStream(any(ModelInput.class), any());
+        expectIdentity(alice.session(), ALICE_ID);
+        expectIdentity(bob.session(), "db-user-bob");
+        verifyNoInteractions(difyWorkflowClient);
+    }
+
+    static Stream<Arguments> toolGrants() {
+        return Stream.of(
+                Arguments.of(List.of("chat:agent:invoke"), List.of()),
+                Arguments.of(List.of("chat:agent:invoke", "order:query"), List.of("query_order")),
+                Arguments.of(List.of("chat:agent:invoke", "logistics:query"), List.of("query_logistics")),
+                Arguments.of(List.of("chat:agent:invoke", "order:query", "logistics:query"),
+                        List.of("query_order", "query_logistics"))
+        );
+    }
+
+    static Stream<Arguments> forbiddenToolCalls() {
+        return Stream.of(
+                Arguments.of(List.of("chat:agent:invoke"), "query_order", List.of()),
+                Arguments.of(List.of("chat:agent:invoke"), "query_logistics", List.of()),
+                Arguments.of(List.of("chat:agent:invoke", "order:query"), "query_logistics", List.of("query_order")),
+                Arguments.of(List.of("chat:agent:invoke", "logistics:query"), "query_order", List.of("query_logistics"))
+        );
+    }
+
+    private MvcResult startStream(ClientState user, String message) throws Exception {
+        return mvc.perform(post("/api/chat/chat").session(user.session())
+                        .header(user.headerName(), user.token())
+                        .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
+                        .content(mapper.writeValueAsString(Map.of("message", message))))
+                .andExpect(request().asyncStarted()).andReturn();
+    }
+
+    private String finishStream(MvcResult stream, boolean successful) throws Exception {
+        stream.getAsyncResult(15_000L);
+        String body = mvc.perform(asyncDispatch(stream))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        if (successful) {
+            assertThat(body).endsWith("event: done\ndata: {}\n\n").doesNotContain("event: error");
+        } else {
+            assertThat(body).endsWith("event: error\ndata: {\"message\":\"本次生成失败，请稍后重试\"}\n\n")
+                    .doesNotContain("event: done");
+        }
+        return body;
+    }
+
+    private void verifyNoBusinessQueries() {
+        verify(orderTool, never()).queryOrder(anyString());
+        verify(logisticsTool, never()).queryLogistics(anyString());
     }
 
     private ClientState login(String username, String password) throws Exception {

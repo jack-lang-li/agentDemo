@@ -7,6 +7,7 @@ import com.example.agent.business.chat.execution.ChatExecutorRegistry;
 import com.example.agent.business.chat.execution.StreamingChatExecutor;
 import com.example.agent.business.chat.application.DefaultChatService;
 import com.example.agent.business.chat.application.model.ChatCommand;
+import com.example.agent.business.security.authorization.CallerAuthorization;
 import com.example.agent.common.core.context.CallerContext;
 import com.example.agent.common.core.context.CallerType;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,10 +35,9 @@ class DefaultChatServiceTest {
 
     private final ChatCommand command = new ChatCommand(
             "你好",
-            new CallerContext(
-                    "tenant-test",
-                    CallerType.USER,
-                    "user-42"
+            new CallerAuthorization(
+                    new CallerContext("tenant-test", CallerType.USER, "user-42"),
+                    Set.of()
             )
     );
     private StreamingChatExecutor local;

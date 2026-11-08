@@ -32,11 +32,12 @@ class DatabaseMigrationConfigurationTest {
         var migrations = new PathMatchingResourcePatternResolver()
                 .getResources(location + "/V*__*.sql");
         assertThat(Arrays.stream(migrations).map(resource -> resource.getFilename()).toList())
-                .as("配置目录内应存在正确命名的 V1 至 V4 迁移")
+                .as("配置目录内应存在正确命名的 V1 至 V5 迁移")
                 .contains(
                         "V1__create_iam_user.sql",
                         "V2__create_iam_local_account.sql",
                         "V3__create_iam_rbac.sql",
-                        "V4__seed_chat_permissions.sql");
+                        "V4__seed_chat_permissions.sql",
+                        "V5__seed_tool_permissions.sql");
     }
 }
